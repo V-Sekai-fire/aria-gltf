@@ -707,16 +707,37 @@ defmodule AriaGltf.Validation do
       "KHR_mesh_quantization",
       "KHR_texture_transform",
       "EXT_mesh_gpu_instancing",
-      "EXT_texture_webp"
+      "EXT_texture_webp",
+      "VRMC_vrm" # VRM 1.0 extension
     ]
 
-    Enum.reduce(extensions, context, fn ext, ctx ->
-      if ext in known_extensions or String.starts_with?(ext, ["KHR_", "EXT_"]) do
-        ctx
-      else
-        Context.add_warning(ctx, :extensions, "Unknown extension: #{ext}")
-      end
-    end)
+    context =
+      Enum.reduce(extensions, context, fn ext, ctx ->
+        if ext in known_extensions or String.starts_with?(ext, ["KHR_", "EXT_", "VRMC_"]) do
+          ctx
+        else
+          Context.add_warning(ctx, :extensions, "Unknown extension: #{ext}")
+        end
+      end)
+
+    # Validate VRM extension if present
+    if "VRMC_vrm" in extensions do
+      validate_vrm_extension(context)
+    else
+      context
+    end
+  end
+
+  # Validate VRM 1.0 extension
+  defp validate_vrm_extension(context) do
+    case Code.ensure_loaded(AriaGltf.Extensions.Vrm.Validator) do
+      {:module, AriaGltf.Extensions.Vrm.Validator} ->
+        AriaGltf.Extensions.Vrm.Validator.validate(context)
+
+      {:error, _reason} ->
+        # VRM validator not available, skip validation
+        context
+    end
   end
 
   # Schema validation
