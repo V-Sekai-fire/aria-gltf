@@ -1,0 +1,13 @@
+/_build
+/deps
+/cover
+*.beam
+*.so
+*.dylib
+.DS_Store
+erl_crash.dump
+*.ez
+/test/support/test.db
+/test/support/test.db-journal
+.elixir_ls
+
