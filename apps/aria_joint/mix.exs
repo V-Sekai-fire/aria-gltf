@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2025-present K. S. Ernest (iFire) Lee
 
+# Copyright (c) 2025-present K. S. Ernest (iFire) Lee
+
 defmodule AriaJoint.MixProject do
   use Mix.Project
 
@@ -18,6 +20,7 @@ defmodule AriaJoint.MixProject do
     ]
   end
 
+  # Run "mix help compile.app" to learn about applications.
   def application do
     [
       extra_applications: [:logger],
@@ -25,6 +28,7 @@ defmodule AriaJoint.MixProject do
     ]
   end
 
+  # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
       {:aria_math, git: "https://github.com/V-Sekai-fire/aria-math.git"},
@@ -33,4 +37,3 @@ defmodule AriaJoint.MixProject do
     ]
   end
 end
-
