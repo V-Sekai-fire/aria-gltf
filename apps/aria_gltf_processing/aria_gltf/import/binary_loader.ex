@@ -75,13 +75,55 @@ defmodule AriaGltf.Import.BinaryLoader do
       iex> AriaGltf.Import.BinaryLoader.load_buffers(document, base_uri: "/path/to/files")
       {:ok, %AriaGltf.Document{...}}
   """
-  @spec load_buffers(Document.t(), keyword()) :: load_result()
+  @spec load_buffers(Document.t() | {:ok, Document.t()} | {:ok, map()}, keyword()) :: load_result()
+  # Handle Document struct directly (not wrapped in {:ok, ...})
+  def load_buffers(%Document{buffers: buffers} = document, opts) do
+    base_uri = Keyword.get(opts, :base_uri, "")
+
+    case load_buffer_data(buffers, base_uri, []) do
+      {:ok, loaded_buffers} ->
+        {:ok, %{document | buffers: loaded_buffers}}
+
+      {:error, _} = error ->
+        error
+    end
+  end
+
+  # Handle {:ok, Document} tuple
   def load_buffers({:ok, %Document{buffers: buffers} = document}, opts) do
     base_uri = Keyword.get(opts, :base_uri, "")
 
     case load_buffer_data(buffers, base_uri, []) do
       {:ok, loaded_buffers} ->
         {:ok, %{document | buffers: loaded_buffers}}
+
+      {:error, _} = error ->
+        error
+    end
+  end
+
+  # Handle map-based documents (from test fixtures)
+  def load_buffers({:ok, document}, opts) when is_map(document) do
+    base_uri = Keyword.get(opts, :base_uri, "")
+    buffers = Map.get(document, :buffers) || Map.get(document, "buffers") || []
+
+    case load_buffer_data(buffers, base_uri, []) do
+      {:ok, loaded_buffers} ->
+        {:ok, Map.put(document, :buffers, loaded_buffers)}
+
+      {:error, _} = error ->
+        error
+    end
+  end
+
+  # Handle map-based documents directly (not wrapped in {:ok, ...})
+  def load_buffers(document, opts) when is_map(document) do
+    base_uri = Keyword.get(opts, :base_uri, "")
+    buffers = Map.get(document, :buffers) || Map.get(document, "buffers") || []
+
+    case load_buffer_data(buffers, base_uri, []) do
+      {:ok, loaded_buffers} ->
+        {:ok, Map.put(document, :buffers, loaded_buffers)}
 
       {:error, _} = error ->
         error

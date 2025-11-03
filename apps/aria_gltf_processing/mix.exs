@@ -17,16 +17,30 @@ defmodule AriaGltfProcessing.MixProject do
       compilers: [:elixir_make | Mix.compilers()],
       make_targets: ["all"],
       make_clean: ["clean"],
+      # Source files are in the app root, not in lib/
+      # Include test support files in compilation
+      elixirc_paths: elixirc_paths(Mix.env()),
       deps: deps()
     ]
   end
 
   def application do
-    [
-      extra_applications: [:logger],
-      mod: {AriaGltf.Application, []}
+    # Only include mod in non-test environments
+    # In test mode, modules are loaded but app doesn't need to start
+    base = [
+      extra_applications: [:logger]
     ]
+
+    if Mix.env() == :test do
+      # Don't specify mod in test mode to avoid startup issues
+      base
+    else
+      Keyword.put(base, :mod, {AriaGltf.Application, []})
+    end
   end
+
+  defp elixirc_paths(:test), do: [".", "test/support"]
+  defp elixirc_paths(_), do: ["."]
 
   defp deps do
     [

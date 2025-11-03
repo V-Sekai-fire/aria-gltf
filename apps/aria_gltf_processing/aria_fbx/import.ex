@@ -31,25 +31,31 @@ defmodule AriaFbx.Import do
   def from_file(file_path, opts \\ []) when is_binary(file_path) do
     validate? = Keyword.get(opts, :validate, true)
 
-    case Nif.load_fbx(file_path) do
-      {:ok, ufbx_data} ->
-        case Parser.from_ufbx_scene(ufbx_data) do
-          {:ok, document} ->
-            if validate? do
-              case validate_document(document) do
-                :ok -> {:ok, document}
-                {:error, reason} -> {:error, reason}
+    # Handle NIF errors gracefully (NIF may raise if not loaded or on file errors)
+    try do
+      case Nif.load_fbx(file_path) do
+        {:ok, ufbx_data} ->
+          case Parser.from_ufbx_scene(ufbx_data) do
+            {:ok, document} ->
+              if validate? do
+                case validate_document(document) do
+                  :ok -> {:ok, document}
+                  {:error, reason} -> {:error, reason}
+                end
+              else
+                {:ok, document}
               end
-            else
-              {:ok, document}
-            end
 
-          {:error, reason} ->
-            {:error, reason}
-        end
+            {:error, reason} ->
+              {:error, reason}
+          end
 
-      {:error, reason} ->
-        {:error, reason}
+        {:error, reason} ->
+          {:error, reason}
+      end
+    rescue
+      e in [ArgumentError, RuntimeError] ->
+        {:error, Exception.message(e)}
     end
   end
 

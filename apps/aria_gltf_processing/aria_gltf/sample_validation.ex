@@ -283,12 +283,12 @@ defmodule AriaGltf.SampleValidation do
   defp check_circular_dependencies(joints, nodes) do
     # Basic check: verify no joint has itself as a child (indirectly)
     # For a more complete check, we'd need to build the full hierarchy graph
-    check_all_joints(joints, nodes, MapSet.new())
+    check_all_joints(joints, joints, nodes, MapSet.new())
   end
 
-  defp check_all_joints([], _nodes, _visited), do: :ok
+  defp check_all_joints([], _joints, _nodes, _visited), do: :ok
 
-  defp check_all_joints([joint_index | rest], nodes, visited) do
+  defp check_all_joints([joint_index | rest], joints, nodes, visited) do
     if MapSet.member?(visited, joint_index) do
       {:error, "Circular dependency detected at joint #{joint_index}"}
     else
@@ -297,7 +297,7 @@ defmodule AriaGltf.SampleValidation do
 
       case check_node_children(node, joints, nodes, new_visited) do
         {:error, _} = error -> error
-        :ok -> check_all_joints(rest, nodes, new_visited)
+        :ok -> check_all_joints(rest, joints, nodes, new_visited)
       end
     end
   end

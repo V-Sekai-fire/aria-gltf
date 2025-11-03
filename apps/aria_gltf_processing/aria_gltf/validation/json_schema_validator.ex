@@ -63,7 +63,9 @@ defmodule AriaGltf.Validation.JsonSchemaValidator do
         :ok ->
           :ok
 
-        {:error, %JsonXema.ValidationError{errors: errors}} ->
+        {:error, validation_error} ->
+          # Handle JsonXema validation error structure
+          errors = extract_errors(validation_error)
           error_messages =
             Enum.map(errors, fn error ->
               format_xema_error(error)
@@ -80,6 +82,12 @@ defmodule AriaGltf.Validation.JsonSchemaValidator do
         {:error, ["JSON schema validation unavailable: #{Exception.message(e)}"]}
     end
   end
+
+  # Extract errors from JsonXema validation error structure
+  defp extract_errors(%{errors: errors}) when is_list(errors), do: errors
+  defp extract_errors(%{error: error}), do: [error]
+  defp extract_errors(error) when is_map(error), do: [error]
+  defp extract_errors(error), do: [error]
 
   # Format JsonXema error for reporting
   defp format_xema_error(%{message: message, path: path}) do

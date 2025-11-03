@@ -46,14 +46,27 @@ defmodule AriaGltf.TextureInfo do
 
   @doc """
   Converts a TextureInfo struct to a map.
+  Handles both structs and maps (for compatibility with parsed JSON).
+  Returns an empty map for nil values.
   """
-  @spec to_map(t()) :: map()
+  @spec to_map(t() | map() | nil) :: map()
+  def to_map(nil), do: %{}
+
   def to_map(%__MODULE__{} = texture_info) do
     %{}
     |> put_if_present("index", texture_info.index)
     |> put_if_present("texCoord", texture_info.tex_coord, 0)
     |> put_if_present("extensions", texture_info.extensions)
     |> put_if_present("extras", texture_info.extras)
+  end
+
+  # Handle maps (when texture info is stored as map from JSON parsing)
+  def to_map(texture_info) when is_map(texture_info) do
+    %{}
+    |> put_if_present("index", Map.get(texture_info, :index) || Map.get(texture_info, "index"))
+    |> put_if_present("texCoord", Map.get(texture_info, :tex_coord) || Map.get(texture_info, "texCoord"), 0)
+    |> put_if_present("extensions", Map.get(texture_info, :extensions) || Map.get(texture_info, "extensions"))
+    |> put_if_present("extras", Map.get(texture_info, :extras) || Map.get(texture_info, "extras"))
   end
 
   @doc """

@@ -205,9 +205,9 @@ defmodule AriaGltf.Extensions.VsekaiMeshBmesh.Export do
   defp encode_face_arrays(faces) do
     {vertices_list, edges_list, loops_list, offsets} =
       Enum.reduce(faces, {[], [], [], []}, fn face, {v_acc, e_acc, l_acc, o_acc} ->
-        vertex_offset = length(vertices_list)
-        edge_offset = length(edges_list)
-        loop_offset = length(loops_list)
+        vertex_offset = length(v_acc)
+        edge_offset = length(e_acc)
+        loop_offset = length(l_acc)
 
         # Pack face vertices
         new_vertices = face.vertices

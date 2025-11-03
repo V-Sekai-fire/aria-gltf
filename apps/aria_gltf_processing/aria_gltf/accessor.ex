@@ -313,7 +313,7 @@ defmodule AriaGltf.Accessor do
     |> Map.put("componentType", accessor.component_type)
     |> put_if_present("normalized", accessor.normalized, false)
     |> Map.put("count", accessor.count)
-    |> Map.put("type", type_to_string(accessor.type))
+    |> Map.put("type", type_to_string(normalize_type(accessor.type)))
     |> put_if_present("max", accessor.max)
     |> put_if_present("min", accessor.min)
     |> put_if_present("sparse", accessor.sparse)
@@ -453,6 +453,8 @@ defmodule AriaGltf.Accessor do
   defp type_to_string(:mat2), do: "MAT2"
   defp type_to_string(:mat3), do: "MAT3"
   defp type_to_string(:mat4), do: "MAT4"
+  # Handle case where type is already a string (shouldn't happen but for safety)
+  defp type_to_string(type) when is_binary(type), do: type
 
   defp string_to_type("SCALAR"), do: {:ok, :scalar}
   defp string_to_type("VEC2"), do: {:ok, :vec2}
@@ -462,4 +464,14 @@ defmodule AriaGltf.Accessor do
   defp string_to_type("MAT3"), do: {:ok, :mat3}
   defp string_to_type("MAT4"), do: {:ok, :mat4}
   defp string_to_type(_), do: {:error, "Invalid accessor type string"}
+
+  # Normalize type to atom (handles both atom and string inputs)
+  defp normalize_type(type) when is_atom(type), do: type
+  defp normalize_type(type) when is_binary(type) do
+    case string_to_type(type) do
+      {:ok, atom_type} -> atom_type
+      {:error, _} -> type  # Return as-is if conversion fails
+    end
+  end
+  defp normalize_type(type), do: type
 end

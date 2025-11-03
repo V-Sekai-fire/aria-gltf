@@ -39,9 +39,9 @@ defmodule AriaGltf.BmeshConverter do
       iex> AriaGltf.BmeshConverter.from_gltf_document(document)
       {:ok, [%AriaBmesh.Mesh{}, ...]}
   """
-  @spec from_gltf_document(Document.t()) :: {:ok, [Bmesh.t()]} | {:error, String.t()}
-  def from_gltf_document(%Document{} = document) do
-    meshes = document.meshes || []
+  @spec from_gltf_document(Document.t() | map()) :: {:ok, [Bmesh.t()]} | {:error, String.t()}
+  def from_gltf_document(document) when is_map(document) do
+    meshes = Map.get(document, :meshes) || Map.get(document, "meshes") || []
 
     bmeshes =
       Enum.reduce(meshes, [], fn mesh, acc ->
@@ -55,11 +55,14 @@ defmodule AriaGltf.BmeshConverter do
   end
 
   # Convert a single glTF mesh to BMesh
-  defp convert_mesh_to_bmesh(%Document{} = document, %AriaGltf.Mesh{} = mesh) do
-    primitives = mesh.primitives || []
+  defp convert_mesh_to_bmesh(document, mesh) when is_map(document) and is_map(mesh) do
+    primitives = Map.get(mesh, :primitives) || Map.get(mesh, "primitives") || []
+    
+    # Ensure primitives is a list
+    primitives_list = if is_list(primitives), do: primitives, else: []
 
     # Convert each primitive and combine into a single BMesh
-    Enum.reduce(primitives, {:ok, Bmesh.new()}, fn primitive, acc ->
+    Enum.reduce(primitives_list, {:ok, Bmesh.new()}, fn primitive, acc ->
       case acc do
         {:ok, combined_bmesh} ->
           case convert_primitive_to_bmesh(document, primitive) do
@@ -105,8 +108,23 @@ defmodule AriaGltf.BmeshConverter do
   - Error scenarios and recovery
   - Integration with OBJ export pipeline
   """
-  @spec convert_primitive_to_bmesh(Document.t(), Primitive.t()) ::
+  @spec convert_primitive_to_bmesh(Document.t() | map(), Primitive.t() | map()) ::
           {:ok, Bmesh.t()} | {:error, String.t()}
+  def convert_primitive_to_bmesh(document, primitive) when is_map(document) and is_map(primitive) do
+    # Check for VSEKAI_mesh_bmesh extension
+    extensions = Map.get(primitive, :extensions) || Map.get(primitive, "extensions") || %{}
+
+    case Map.get(extensions, @vsekai_extension_name) do
+      nil ->
+        # No extension, reconstruct from triangles
+        reconstruct_from_triangles(document, primitive)
+
+      ext_bmesh when is_map(ext_bmesh) ->
+        # Direct import from VSEKAI_mesh_bmesh
+        Import.from_gltf(document, primitive, ext_bmesh)
+    end
+  end
+  
   def convert_primitive_to_bmesh(%Document{} = document, %Primitive{} = primitive) do
     # Check for VSEKAI_mesh_bmesh extension
     extensions = primitive.extensions || %{}
@@ -123,6 +141,25 @@ defmodule AriaGltf.BmeshConverter do
   end
 
   # Reconstruct BMesh from triangle mesh
+  defp reconstruct_from_triangles(document, primitive) when is_map(document) and is_map(primitive) do
+    # Extract positions and indices from accessors
+    with {:ok, positions} <- extract_positions(document, primitive),
+         {:ok, indices} <- extract_indices(document, primitive) do
+      # Handle auto indices (sequential 0, 1, 2, ...)
+      final_indices =
+        case indices do
+          :auto_indices ->
+            length = length(positions)
+            0..(length - 1) |> Enum.to_list()
+
+          indices_list ->
+            indices_list
+        end
+
+      TriangleReconstruction.from_triangles(document, primitive, positions, final_indices)
+    end
+  end
+  
   defp reconstruct_from_triangles(%Document{} = document, %Primitive{} = primitive) do
     # Extract positions and indices from accessors
     with {:ok, positions} <- extract_positions(document, primitive),
@@ -143,6 +180,28 @@ defmodule AriaGltf.BmeshConverter do
   end
 
   # Extract vertex positions from primitive accessors
+  defp extract_positions(document, primitive) when is_map(document) and is_map(primitive) do
+    attributes = Map.get(primitive, :attributes) || Map.get(primitive, "attributes") || %{}
+    position_accessor_idx = Map.get(attributes, "POSITION") || Map.get(attributes, :POSITION)
+    
+    case position_accessor_idx do
+      nil ->
+        {:error, "Primitive missing POSITION attribute"}
+
+      idx ->
+        accessors = Map.get(document, :accessors) || Map.get(document, "accessors") || []
+        accessors_list = if is_list(accessors), do: accessors, else: []
+
+        case Enum.at(accessors_list, idx) do
+          nil ->
+            {:error, "Invalid POSITION accessor index: #{idx}"}
+
+          accessor ->
+            extract_vec3_accessor(document, accessor)
+        end
+    end
+  end
+  
   defp extract_positions(%Document{} = document, %Primitive{} = primitive) do
     case Map.get(primitive.attributes, "POSITION") do
       nil ->
@@ -162,6 +221,26 @@ defmodule AriaGltf.BmeshConverter do
   end
 
   # Extract triangle indices from primitive
+  defp extract_indices(document, primitive) when is_map(document) and is_map(primitive) do
+    case Map.get(primitive, :indices) || Map.get(primitive, "indices") do
+      nil ->
+        # Generate sequential indices (0, 1, 2, 3, ...)
+        {:ok, :auto_indices}
+
+      index_accessor_idx ->
+        accessors = Map.get(document, :accessors) || Map.get(document, "accessors") || []
+        accessors_list = if is_list(accessors), do: accessors, else: []
+
+        case Enum.at(accessors_list, index_accessor_idx) do
+          nil ->
+            {:error, "Invalid indices accessor index: #{index_accessor_idx}"}
+
+          accessor ->
+            extract_indices_accessor(document, accessor)
+        end
+    end
+  end
+  
   defp extract_indices(%Document{} = document, %Primitive{} = primitive) do
     case primitive.indices do
       nil ->
@@ -182,6 +261,13 @@ defmodule AriaGltf.BmeshConverter do
   end
 
   # Extract Vec3 positions from accessor
+  defp extract_vec3_accessor(document, accessor) when is_map(document) and is_map(accessor) do
+    with {:ok, raw_data} <- read_accessor_data(document, accessor),
+         {:ok, positions} <- decode_vec3_accessor(raw_data, accessor) do
+      {:ok, positions}
+    end
+  end
+  
   defp extract_vec3_accessor(%Document{} = document, %AriaGltf.Accessor{} = accessor) do
     with {:ok, raw_data} <- read_accessor_data(document, accessor),
          {:ok, positions} <- decode_vec3_accessor(raw_data, accessor) do
@@ -190,14 +276,106 @@ defmodule AriaGltf.BmeshConverter do
   end
 
   # Extract indices from accessor
-  defp extract_indices_accessor(%Document{} = document, %AriaGltf.Accessor{} = accessor) do
+  defp extract_indices_accessor(document, accessor) when is_map(document) and is_map(accessor) do
     with {:ok, raw_data} <- read_accessor_data(document, accessor),
-         indices <- decode_indices_accessor(raw_data, accessor) do
+         {:ok, indices} <- decode_indices_accessor(raw_data, accessor) do
+      {:ok, indices}
+    end
+  end
+  
+  defp extract_indices_accessor(%Document{} = document, %AriaGltf.Accessor{} = accessor) do
+    with {:ok, raw_data} <- read_accessor_data(document, accessor) do
+      indices = decode_indices_accessor(raw_data, accessor)
       {:ok, indices}
     end
   end
 
   # Read accessor data from buffer view
+  defp read_accessor_data(document, accessor) when is_map(document) and is_map(accessor) do
+    bv_index = Map.get(accessor, :buffer_view) || Map.get(accessor, "bufferView")
+    
+    case bv_index do
+      nil ->
+        {:error, "Accessor missing buffer_view"}
+
+      bv_idx ->
+        buffer_views = Map.get(document, :buffer_views) || Map.get(document, "bufferViews") || []
+        buffers = Map.get(document, :buffers) || Map.get(document, "buffers") || []
+        buffer_views_list = if is_list(buffer_views), do: buffer_views, else: []
+        buffers_list = if is_list(buffers), do: buffers, else: []
+
+        case Enum.at(buffer_views_list, bv_idx) do
+          nil ->
+            {:error, "Invalid buffer view index: #{bv_idx}"}
+
+          buffer_view ->
+            buffer_index = Map.get(buffer_view, :buffer) || Map.get(buffer_view, "buffer")
+
+            case Enum.at(buffers_list, buffer_index) do
+              nil ->
+                {:error, "Invalid buffer index: #{buffer_index}"}
+
+              buffer when is_map(buffer) ->
+                buffer_data = Map.get(buffer, :data) || Map.get(buffer, "data")
+                
+                case buffer_data do
+                  nil ->
+                    {:error, "Buffer #{buffer_index} has no data"}
+
+                  data when is_binary(data) ->
+                    buffer_offset = Map.get(buffer_view, :byte_offset) || Map.get(buffer_view, "byteOffset") || 0
+                    accessor_offset = Map.get(accessor, :byte_offset) || Map.get(accessor, "byteOffset") || 0
+                    total_offset = buffer_offset + accessor_offset
+
+                    # Get element size from accessor
+                    component_type = Map.get(accessor, :component_type) || Map.get(accessor, "componentType")
+                    type = Map.get(accessor, :type) || Map.get(accessor, "type")
+                    count = Map.get(accessor, :count) || Map.get(accessor, "count")
+                    
+                    # Validate required fields
+                    cond do
+                      is_nil(component_type) ->
+                        {:error, "Accessor missing component_type"}
+                      
+                      is_nil(type) ->
+                        {:error, "Accessor missing type"}
+                      
+                      is_nil(count) ->
+                        {:error, "Accessor missing count"}
+                      
+                      true ->
+                        component_size = AriaGltf.Accessor.component_byte_size(component_type)
+                        # Normalize type string to atom if needed
+                        type_atom = normalize_accessor_type(type)
+                        type_count = AriaGltf.Accessor.component_count(type_atom)
+                        
+                        cond do
+                          is_nil(component_size) ->
+                            {:error, "Invalid component_type: #{component_type}"}
+                          
+                          is_nil(type_count) ->
+                            {:error, "Invalid type: #{type}"}
+                          
+                          true ->
+                            element_size = component_size * type_count
+                            total_length = count * element_size
+                            
+                            if byte_size(data) >= total_offset + total_length do
+                              <<_::binary-size(total_offset), extracted_data::binary-size(total_length), _::binary>> =
+                                data
+
+                              {:ok, extracted_data}
+                            else
+                              {:error, "Accessor data extends beyond buffer"}
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+  end
+  
   defp read_accessor_data(%Document{} = document, %AriaGltf.Accessor{} = accessor) do
     case accessor.buffer_view do
       nil ->
@@ -243,6 +421,44 @@ defmodule AriaGltf.BmeshConverter do
   end
 
   # Decode Vec3 accessor data to list of {x, y, z} tuples
+  defp decode_vec3_accessor(data, accessor) when is_binary(data) and is_map(accessor) do
+    component_type = Map.get(accessor, :component_type) || Map.get(accessor, "componentType")
+    count = Map.get(accessor, :count) || Map.get(accessor, "count")
+    normalized? = Map.get(accessor, :normalized) || Map.get(accessor, "normalized") || false
+    
+    cond do
+      is_nil(component_type) ->
+        {:error, "Accessor missing component_type"}
+      
+      is_nil(count) ->
+        {:error, "Accessor missing count"}
+      
+      true ->
+        component_size = AriaGltf.Accessor.component_byte_size(component_type)
+        
+        cond do
+          is_nil(component_size) ->
+            {:error, "Invalid component_type: #{component_type}"}
+          
+          true ->
+            element_size = component_size * 3
+
+            try do
+              positions =
+                0..(count - 1)
+                |> Enum.map(fn i ->
+                  offset = i * element_size
+                  decode_vec3_element(data, offset, component_type, normalized?)
+                end)
+
+              {:ok, positions}
+            rescue
+              error -> {:error, "Failed to decode Vec3 accessor: #{inspect(error)}"}
+            end
+        end
+    end
+  end
+  
   defp decode_vec3_accessor(data, %AriaGltf.Accessor{} = accessor) do
     component_size = AriaGltf.Accessor.component_byte_size(accessor.component_type)
     element_size = component_size * 3
@@ -337,6 +553,37 @@ defmodule AriaGltf.BmeshConverter do
   end
 
   # Decode indices accessor data to list of integers
+  defp decode_indices_accessor(data, accessor) when is_binary(data) and is_map(accessor) do
+    component_type = Map.get(accessor, :component_type) || Map.get(accessor, "componentType")
+    count = Map.get(accessor, :count) || Map.get(accessor, "count")
+    
+    cond do
+      is_nil(component_type) ->
+        {:error, "Accessor missing component_type"}
+      
+      is_nil(count) ->
+        {:error, "Accessor missing count"}
+      
+      true ->
+        component_size = AriaGltf.Accessor.component_byte_size(component_type)
+        
+        cond do
+          is_nil(component_size) ->
+            {:error, "Invalid component_type: #{component_type}"}
+          
+          true ->
+            indices =
+              0..(count - 1)
+              |> Enum.map(fn i ->
+                offset = i * component_size
+                decode_index_element(data, offset, component_type)
+              end)
+            
+            {:ok, indices}
+        end
+    end
+  end
+  
   defp decode_indices_accessor(data, %AriaGltf.Accessor{} = accessor) do
     component_size = AriaGltf.Accessor.component_byte_size(accessor.component_type)
 
@@ -363,6 +610,17 @@ defmodule AriaGltf.BmeshConverter do
   defp decode_index_element(_data, _offset, component_type) do
     raise "Unsupported component type for indices: #{component_type}"
   end
+
+  # Normalize accessor type string to atom
+  defp normalize_accessor_type(type) when is_atom(type), do: type
+  defp normalize_accessor_type("SCALAR"), do: :scalar
+  defp normalize_accessor_type("VEC2"), do: :vec2
+  defp normalize_accessor_type("VEC3"), do: :vec3
+  defp normalize_accessor_type("VEC4"), do: :vec4
+  defp normalize_accessor_type("MAT2"), do: :mat2
+  defp normalize_accessor_type("MAT3"), do: :mat3
+  defp normalize_accessor_type("MAT4"), do: :mat4
+  defp normalize_accessor_type(type), do: type
 
   # Merge two BMeshes (combines all vertices, edges, loops, faces)
   defp merge_bmeshes(%Bmesh{} = bmesh1, %Bmesh{} = bmesh2) do

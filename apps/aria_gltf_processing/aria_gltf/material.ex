@@ -291,6 +291,11 @@ defmodule AriaGltf.Material do
   defp alpha_mode_to_string(:opaque), do: "OPAQUE"
   defp alpha_mode_to_string(:mask), do: "MASK"
   defp alpha_mode_to_string(:blend), do: "BLEND"
+  # Handle string inputs (from map-based fixtures)
+  defp alpha_mode_to_string("OPAQUE"), do: "OPAQUE"
+  defp alpha_mode_to_string("MASK"), do: "MASK"
+  defp alpha_mode_to_string("BLEND"), do: "BLEND"
+  defp alpha_mode_to_string(str) when is_binary(str), do: str
 
   defp parse_alpha_mode("OPAQUE"), do: {:ok, :opaque}
   defp parse_alpha_mode("MASK"), do: {:ok, :mask}

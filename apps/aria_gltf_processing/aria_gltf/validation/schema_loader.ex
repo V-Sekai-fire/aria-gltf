@@ -11,10 +11,10 @@ defmodule AriaGltf.Validation.SchemaLoader do
 
   alias AriaGltf.Validation.SchemaCache
 
-  @schema_base_path Path.join([
-                      :code.priv_dir(:aria_gltf_processing),
-                      "../../thirdparty/glTF/specification/2.0/schema"
-                    ])
+  @schema_base_path_parts [
+    :code.priv_dir(:aria_gltf_processing),
+    "../../thirdparty/glTF/specification/2.0/schema"
+  ]
 
   @doc """
   Loads the main glTF schema.
@@ -118,7 +118,7 @@ defmodule AriaGltf.Validation.SchemaLoader do
   """
   @spec schema_base_path() :: String.t()
   def schema_base_path do
-    @schema_base_path
+    @schema_base_path_parts
     |> Enum.filter(& &1)
     |> Path.join()
     |> Path.expand()
