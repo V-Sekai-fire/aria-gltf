@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2025-present K. S. Ernest (iFire) Lee
 
-defmodule AriaGltf.MixProject do
+defmodule AriaGltfProcessing.MixProject do
   use Mix.Project
 
   def project do
     [
-      app: :aria_gltf,
+      app: :aria_gltf_processing,
       version: "0.1.0",
       build_path: "../../_build",
       config_path: "../../config/config.exs",

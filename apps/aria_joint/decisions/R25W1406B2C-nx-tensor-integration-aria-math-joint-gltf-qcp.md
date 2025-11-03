@@ -94,7 +94,7 @@ Migrate all four apps to use Nx tensors for their core mathematical operations w
 
 ### Phase 3: aria_gltf Mesh Processing (MEDIUM PRIORITY) ✅
 
-**File**: `apps/aria_gltf/lib/aria_gltf/`
+**File**: `apps/aria_gltf_processing/lib/aria_gltf/`
 
 **Mesh Operations**:
 

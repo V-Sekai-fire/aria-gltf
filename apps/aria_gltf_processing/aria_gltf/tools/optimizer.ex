@@ -36,13 +36,13 @@ defmodule AriaGltf.Tools.Optimizer do
 
   defp find_gltfpack_path do
     # First try configured path
-    case Application.get_env(:aria_gltf, :gltfpack_path) do
+    case Application.get_env(:aria_gltf_processing, :gltfpack_path) do
       nil ->
         # Try common locations
         candidate_paths = [
           "gltfpack",
           "/usr/local/bin/gltfpack",
-          Path.join([:code.priv_dir(:aria_gltf), "../../thirdparty/meshoptimizer/gltfpack"] |> Enum.filter(& &1))
+          Path.join([:code.priv_dir(:aria_gltf_processing), "../../thirdparty/meshoptimizer/gltfpack"] |> Enum.filter(& &1))
         ]
         
         Enum.find(candidate_paths, fn path ->
