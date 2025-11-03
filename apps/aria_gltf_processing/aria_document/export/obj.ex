@@ -601,15 +601,184 @@ defmodule AriaDocument.Export.Obj do
   end
 
   defp write_faces(indices, lines, vertex_offset, normal_offset, texcoord_offset, material_ids) do
-    # TODO: 2025-11-03 fire - Implement face generation from indices
-    # Need to:
-    # - Triangulate if necessary (OBJ supports triangles and quads)
-    # - Handle vertex/normal/texcoord indices correctly
-    # - Apply material groups (usemtl)
-    # - Handle cases where normals or texcoords may be missing
+    # Group indices into triangles (FBX indices are typically triangles)
+    # OBJ supports triangles (3 vertices) and quads (4 vertices)
+    face_lines =
+      if length(indices) > 0 do
+        # Check if we have quads (divisible by 4) or triangles (divisible by 3)
+        cond do
+          rem(length(indices), 4) == 0 ->
+            # Try quads first
+            generate_quad_faces(indices, vertex_offset, normal_offset, texcoord_offset,
+              material_ids)
 
-    # For now, return lines unchanged
-    lines
+          rem(length(indices), 3) == 0 ->
+            # Triangles
+            generate_triangle_faces(indices, vertex_offset, normal_offset, texcoord_offset,
+              material_ids)
+
+          true ->
+            # Invalid index count, try to process what we can as triangles
+            triangle_count = div(length(indices), 3)
+            available_indices = Enum.take(indices, triangle_count * 3)
+
+            generate_triangle_faces(available_indices, vertex_offset, normal_offset,
+              texcoord_offset, material_ids)
+        end
+      else
+        []
+      end
+
+    lines ++ face_lines
+  end
+
+  # Generate triangle faces from indices
+  defp generate_triangle_faces(indices, vertex_offset, normal_offset, texcoord_offset,
+         material_ids) do
+    triangles = Enum.chunk_every(indices, 3)
+
+    {face_lines, _} =
+      triangles
+      |> Enum.with_index()
+      |> Enum.reduce({[], nil}, fn {triangle, triangle_index}, {acc, current_material} ->
+        # Get material for this triangle (if material_ids provided)
+        material_id =
+          if material_ids && length(material_ids) > 0 do
+            Enum.at(material_ids, triangle_index)
+          else
+            nil
+          end
+
+        # Convert triangle indices to OBJ format (1-based)
+        face_line =
+          triangle
+          |> Enum.map(fn vertex_idx ->
+            # OBJ uses 1-based indexing
+            v_idx = vertex_idx + vertex_offset + 1
+
+            # Build face vertex reference: v/vt/vn, v/vt, or v
+            cond do
+              normal_offset > 0 && texcoord_offset > 0 ->
+                # Has both normals and texture coordinates
+                # For FBX, we use vertex index for both normal and texcoord (indexed per vertex)
+                normal_idx = v_idx
+                texcoord_idx = vertex_idx + texcoord_offset + 1
+                "#{v_idx}/#{texcoord_idx}/#{normal_idx}"
+
+              texcoord_offset > 0 ->
+                # Has texture coordinates only
+                texcoord_idx = vertex_idx + texcoord_offset + 1
+                "#{v_idx}/#{texcoord_idx}"
+
+              normal_offset > 0 ->
+                # Has normals only
+                normal_idx = v_idx
+                "#{v_idx}//#{normal_idx}"
+
+              true ->
+                # Vertex only
+                "#{v_idx}"
+            end
+          end)
+          |> Enum.join(" ")
+
+        face_str = "f #{face_line}"
+
+        # Add material group if material changed
+        {updated_lines, new_material} =
+          cond do
+            material_id == nil ->
+              # No material, just add face
+              {[face_str | acc], current_material}
+
+            material_id == current_material ->
+              # Material hasn't changed, just add face
+              {[face_str | acc], current_material}
+
+            true ->
+              # Material changed, add usemtl command
+              material_name = "material_#{material_id}"
+              {["usemtl #{material_name}", face_str | acc], material_id}
+          end
+
+        {updated_lines, new_material}
+      end)
+
+    Enum.reverse(face_lines)
+  end
+
+  # Generate quad faces from indices
+  defp generate_quad_faces(indices, vertex_offset, normal_offset, texcoord_offset,
+         material_ids) do
+    quads = Enum.chunk_every(indices, 4)
+
+    {face_lines, _} =
+      quads
+      |> Enum.with_index()
+      |> Enum.reduce({[], nil}, fn {quad, quad_index}, {acc, current_material} ->
+        # Get material for this quad (if material_ids provided)
+        material_id =
+          if material_ids && length(material_ids) > 0 do
+            Enum.at(material_ids, quad_index)
+          else
+            nil
+          end
+
+        # Convert quad indices to OBJ format (1-based)
+        face_line =
+          quad
+          |> Enum.map(fn vertex_idx ->
+            # OBJ uses 1-based indexing
+            v_idx = vertex_idx + vertex_offset + 1
+
+            # Build face vertex reference: v/vt/vn, v/vt, or v
+            cond do
+              normal_offset > 0 && texcoord_offset > 0 ->
+                # Has both normals and texture coordinates
+                normal_idx = v_idx
+                texcoord_idx = vertex_idx + texcoord_offset + 1
+                "#{v_idx}/#{texcoord_idx}/#{normal_idx}"
+
+              texcoord_offset > 0 ->
+                # Has texture coordinates only
+                texcoord_idx = vertex_idx + texcoord_offset + 1
+                "#{v_idx}/#{texcoord_idx}"
+
+              normal_offset > 0 ->
+                # Has normals only
+                normal_idx = v_idx
+                "#{v_idx}//#{normal_idx}"
+
+              true ->
+                # Vertex only
+                "#{v_idx}"
+            end
+          end)
+          |> Enum.join(" ")
+
+        face_str = "f #{face_line}"
+
+        # Add material group if material changed
+        {updated_lines, new_material} =
+          cond do
+            material_id == nil ->
+              # No material, just add face
+              {[face_str | acc], current_material}
+
+            material_id == current_material ->
+              # Material hasn't changed, just add face
+              {[face_str | acc], current_material}
+
+            true ->
+              # Material changed, add usemtl command
+              material_name = "material_#{material_id}"
+              {["usemtl #{material_name}", face_str | acc], material_id}
+          end
+
+        {updated_lines, new_material}
+      end)
+
+    Enum.reverse(face_lines)
   end
 
   defp generate_mtl_content_gltf(%AriaGltf.Document{} = document, _base_path) do

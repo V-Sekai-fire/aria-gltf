@@ -246,13 +246,14 @@ defmodule AriaGltf.BmeshConverter do
   defp decode_vec3_accessor(data, %AriaGltf.Accessor{} = accessor) do
     component_size = AriaGltf.Accessor.component_byte_size(accessor.component_type)
     element_size = component_size * 3
+    normalized? = accessor.normalized || false
 
     try do
       positions =
         0..(accessor.count - 1)
         |> Enum.map(fn i ->
           offset = i * element_size
-          decode_vec3_element(data, offset, accessor.component_type)
+          decode_vec3_element(data, offset, accessor.component_type, normalized?)
         end)
 
       {:ok, positions}
@@ -262,16 +263,77 @@ defmodule AriaGltf.BmeshConverter do
   end
 
   # Decode a single Vec3 element
-  defp decode_vec3_element(data, offset, 5126) do
-    # FLOAT (4 bytes per component)
+  defp decode_vec3_element(data, offset, 5126, _normalized?) do
+    # FLOAT (4 bytes per component) - always in float range, no normalization needed
     <<_::binary-size(offset), x::little-float-32, y::little-float-32, z::little-float-32,
       _::binary>> = data
     {x, y, z}
   end
 
-  defp decode_vec3_element(_data, _offset, component_type) do
-    # TODO: Support other component types (normalized SHORT, etc.)
-    raise "Unsupported component type for positions: #{component_type}"
+  defp decode_vec3_element(data, offset, component_type, normalized?) do
+    # Support other component types (normalized and non-normalized)
+    case {component_type, normalized?} do
+      {5120, true} ->
+        # BYTE (signed 8-bit) normalized to [-1, 1]
+        <<_::binary-size(offset), x::little-signed-8, y::little-signed-8, z::little-signed-8,
+          _::binary>> = data
+        {x / 127.0, y / 127.0, z / 127.0}
+
+      {5120, false} ->
+        # BYTE (signed 8-bit) non-normalized - use as-is for positions
+        <<_::binary-size(offset), x::little-signed-8, y::little-signed-8, z::little-signed-8,
+          _::binary>> = data
+        {x / 1.0, y / 1.0, z / 1.0}
+
+      {5121, true} ->
+        # UNSIGNED_BYTE (unsigned 8-bit) normalized to [0, 1]
+        <<_::binary-size(offset), x::little-unsigned-8, y::little-unsigned-8,
+          z::little-unsigned-8, _::binary>> = data
+        {x / 255.0, y / 255.0, z / 255.0}
+
+      {5121, false} ->
+        # UNSIGNED_BYTE (unsigned 8-bit) non-normalized - use as-is
+        <<_::binary-size(offset), x::little-unsigned-8, y::little-unsigned-8,
+          z::little-unsigned-8, _::binary>> = data
+        {x / 1.0, y / 1.0, z / 1.0}
+
+      {5122, true} ->
+        # SHORT (signed 16-bit) normalized to [-1, 1]
+        <<_::binary-size(offset), x::little-signed-16, y::little-signed-16,
+          z::little-signed-16, _::binary>> = data
+        {x / 32767.0, y / 32767.0, z / 32767.0}
+
+      {5122, false} ->
+        # SHORT (signed 16-bit) non-normalized - use as-is for positions
+        <<_::binary-size(offset), x::little-signed-16, y::little-signed-16,
+          z::little-signed-16, _::binary>> = data
+        {x / 1.0, y / 1.0, z / 1.0}
+
+      {5123, true} ->
+        # UNSIGNED_SHORT (unsigned 16-bit) normalized to [0, 1]
+        <<_::binary-size(offset), x::little-unsigned-16, y::little-unsigned-16,
+          z::little-unsigned-16, _::binary>> = data
+        {x / 65535.0, y / 65535.0, z / 65535.0}
+
+      {5123, false} ->
+        # UNSIGNED_SHORT (unsigned 16-bit) non-normalized - use as-is for positions
+        <<_::binary-size(offset), x::little-unsigned-16, y::little-unsigned-16,
+          z::little-unsigned-16, _::binary>> = data
+        {x / 1.0, y / 1.0, z / 1.0}
+
+      {5125, true} ->
+        # UNSIGNED_INT normalized is not allowed per spec (normalized must not be true for UNSIGNED_INT)
+        raise "UNSIGNED_INT cannot be normalized per glTF spec"
+
+      {5125, false} ->
+        # UNSIGNED_INT (unsigned 32-bit) non-normalized - use as-is for positions
+        <<_::binary-size(offset), x::little-unsigned-32, y::little-unsigned-32,
+          z::little-unsigned-32, _::binary>> = data
+        {x / 1.0, y / 1.0, z / 1.0}
+
+      _ ->
+        raise "Unsupported component type for positions: #{component_type}"
+    end
   end
 
   # Decode indices accessor data to list of integers

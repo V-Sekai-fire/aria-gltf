@@ -14,7 +14,7 @@ defmodule AriaGltf.Validation.SchemaValidator do
   """
 
   alias AriaGltf.{Document, Asset}
-  alias AriaGltf.Validation.{Context, ManualValidator, JsonSchemaValidator}
+  alias AriaGltf.Validation.{Context, ManualValidator, JsonSchemaValidator, DataTypes}
 
   @doc """
   Validates a document against the glTF 2.0 JSON schema.
@@ -47,10 +47,18 @@ defmodule AriaGltf.Validation.SchemaValidator do
 
   @doc """
   Validates specific glTF data types and constraints.
+
+  Delegates to `AriaGltf.Validation.DataTypes.validate/2` which checks:
+  - Accessor component types and accessor types
+  - Animation interpolation modes
+  - Material alpha modes
+  - Camera types
+  - Primitive modes
+  - Sampler filters and wrap modes
   """
   @spec validate_data_types(Context.t()) :: Context.t()
-  def validate_data_types(%Context{} = context) do
-    raise "TODO: Implement #{__MODULE__}.validate_data_types"
+  def validate_data_types(%Context{document: document} = context) do
+    DataTypes.validate(context, document)
   end
 
   @doc """

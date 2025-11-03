@@ -36,5 +36,26 @@ defmodule AriaFbx.Nif do
   def load_fbx(_file_path) do
     raise "NIF load_fbx/1 not implemented"
   end
+
+  @doc """
+  Loads an FBX file from binary data using the ufbx library.
+
+  ## Parameters
+
+  - `binary_data`: Binary data containing the FBX file content
+
+  ## Returns
+
+  - `{:ok, scene_data}` - On successful load
+  - `{:error, reason}` - On failure
+
+  ## Examples
+
+      {:ok, scene} = AriaFbx.Nif.load_fbx_binary(binary_data)
+  """
+  @spec load_fbx_binary(binary()) :: {:ok, map()} | {:error, String.t()}
+  def load_fbx_binary(_binary_data) do
+    raise "NIF load_fbx_binary/1 not implemented"
+  end
 end
 

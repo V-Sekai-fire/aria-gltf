@@ -14,13 +14,12 @@ defmodule AriaFbx.Parser do
   @doc """
   Parses a ufbx scene (from NIF) into an FBXDocument.
 
-  Currently a placeholder - will be implemented once the NIF extracts
-  ufbx scene data to Elixir terms.
+  Extracts nodes, meshes, materials, textures, and animations from
+  the ufbx scene data structure and converts them to FBXDocument format.
   """
   @spec from_ufbx_scene(map()) :: {:ok, Document.t()} | {:error, term()}
   def from_ufbx_scene(ufbx_data) when is_map(ufbx_data) do
-    # TODO: Extract nodes, meshes, materials, etc. from ufbx_data
-    # For now, create a minimal document
+    # Extract nodes, meshes, materials, textures, and animations from ufbx_data
     document = Document.new(ufbx_data["version"] || "FBX 7.4")
 
     document =
