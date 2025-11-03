@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2025-present K. S. Ernest (iFire) Lee
 
-defmodule AriaGltf.Extensions.ExtMeshBmesh.Import do
+defmodule AriaGltf.Extensions.VsekaiMeshBmesh.Import do
   @moduledoc """
-  Import EXT_mesh_bmesh extension data into BMesh format.
+  Import VSEKAI_mesh_bmesh extension data into BMesh format.
 
-  This module parses buffer-based BMesh data from EXT_mesh_bmesh extension
+  This module parses buffer-based BMesh data from VSEKAI_mesh_bmesh extension
   and converts it to AriaBmesh.Mesh structures.
   """
 
@@ -14,12 +14,12 @@ defmodule AriaGltf.Extensions.ExtMeshBmesh.Import do
   alias AriaGltf.Import.BinaryLoader
 
   @doc """
-  Imports EXT_mesh_bmesh extension data from a glTF primitive into BMesh.
+  Imports VSEKAI_mesh_bmesh extension data from a glTF primitive into BMesh.
 
   ## Parameters
   - `document`: The glTF document containing buffers and buffer views
-  - `primitive`: The primitive with EXT_mesh_bmesh extension
-  - `ext_bmesh`: The EXT_mesh_bmesh extension JSON data
+  - `primitive`: The primitive with VSEKAI_mesh_bmesh extension
+  - `ext_bmesh`: The VSEKAI_mesh_bmesh extension JSON data
 
   ## Returns
   - `{:ok, bmesh}` - Successfully imported BMesh
@@ -28,7 +28,7 @@ defmodule AriaGltf.Extensions.ExtMeshBmesh.Import do
   ## Examples
 
       iex> ext_bmesh = %{"vertices" => %{"count" => 4, "positions" => 0}}
-      iex> AriaGltf.Extensions.ExtMeshBmesh.Import.from_gltf(document, primitive, ext_bmesh)
+      iex> AriaGltf.Extensions.VsekaiMeshBmesh.Import.from_gltf(document, primitive, ext_bmesh)
       {:ok, %AriaBmesh.Mesh{}}
   """
   @spec from_gltf(Document.t(), AriaGltf.Mesh.Primitive.t(), map()) ::
@@ -44,7 +44,7 @@ defmodule AriaGltf.Extensions.ExtMeshBmesh.Import do
     end
   end
 
-  def from_gltf(_, _, _), do: {:error, "Invalid EXT_mesh_bmesh extension data"}
+  def from_gltf(_, _, _), do: {:error, "Invalid VSEKAI_mesh_bmesh extension data"}
 
   # Import vertices from buffer views
   defp import_vertices(%Mesh{} = bmesh, %Document{} = document, ext_bmesh) do
@@ -57,7 +57,7 @@ defmodule AriaGltf.Extensions.ExtMeshBmesh.Import do
       positions_bv = Map.get(vertices_data, "positions")
 
       if is_nil(positions_bv) do
-        {:error, "EXT_mesh_bmesh vertices.positions buffer view is required"}
+        {:error, "VSEKAI_mesh_bmesh vertices.positions buffer view is required"}
       else
         with {:ok, positions} <- read_vec3_buffer_view(document, positions_bv, count),
              {:ok, bmesh} <- create_vertices(bmesh, positions, vertices_data, document) do
@@ -99,7 +99,7 @@ defmodule AriaGltf.Extensions.ExtMeshBmesh.Import do
       vertices_bv = Map.get(edges_data, "vertices")
 
       if is_nil(vertices_bv) do
-        {:error, "EXT_mesh_bmesh edges.vertices buffer view is required"}
+        {:error, "VSEKAI_mesh_bmesh edges.vertices buffer view is required"}
       else
         with {:ok, edge_vertices} <- read_uint32_pair_buffer_view(document, vertices_bv, count),
              {:ok, bmesh} <- create_edges(bmesh, edge_vertices, edges_data, document) do
@@ -249,7 +249,7 @@ defmodule AriaGltf.Extensions.ExtMeshBmesh.Import do
       offsets_bv = Map.get(faces_data, "offsets")
 
       if is_nil(vertices_bv) or is_nil(offsets_bv) do
-        {:error, "EXT_mesh_bmesh faces.vertices and faces.offsets buffer views are required"}
+        {:error, "VSEKAI_mesh_bmesh faces.vertices and faces.offsets buffer views are required"}
       else
         with {:ok, face_vertices} <- read_uint32_buffer_view(document, vertices_bv, :variable),
              {:ok, face_offsets} <- read_face_offsets(document, offsets_bv, count + 1),

@@ -10,6 +10,8 @@ defmodule AriaDocument.Export.Obj do
   """
 
   alias AriaGltf.{Document, Mesh, Node, Material}
+  alias AriaGltf.BmeshConverter
+  alias AriaBmesh.Mesh, as: Bmesh
   alias AriaFbx.Scene
   alias AriaFbx.Document, as: FBXDocument
 
@@ -106,9 +108,9 @@ defmodule AriaDocument.Export.Obj do
     normal_offset = 0
     texcoord_offset = 0
 
-    # Extract meshes from nodes
-    {obj_lines, _vertex_offset, _normal_offset, _texcoord_offset} =
-      extract_meshes_from_gltf(document, obj_lines, vertex_offset, normal_offset, texcoord_offset)
+    # Extract scenes/nodes with hierarchy
+    {obj_lines, _vertex_offset, _normal_offset, _texcoord_offset, _current_material} =
+      extract_scenes_to_obj(document, obj_lines, vertex_offset, normal_offset, texcoord_offset)
 
     {:ok, Enum.join(obj_lines, "\n") <> "\n"}
   end
@@ -132,18 +134,342 @@ defmodule AriaDocument.Export.Obj do
     {:ok, Enum.join(obj_lines, "\n") <> "\n"}
   end
 
-  defp extract_meshes_from_gltf(document, obj_lines, vertex_offset, normal_offset, texcoord_offset) do
-    meshes = document.meshes || []
+  # New scene/node traversal implementation
+  defp extract_scenes_to_obj(document, obj_lines, vertex_offset, normal_offset, texcoord_offset) do
+    case get_default_scene(document) do
+      nil ->
+        # No scene available, fall back to old method
+        {old_lines, old_v, old_n, old_t} =
+          extract_meshes_from_gltf(document, obj_lines, vertex_offset, normal_offset,
+            texcoord_offset)
+
+        # Return with nil material for backward compatibility
+        {old_lines, old_v, old_n, old_t, nil}
+
+      scene ->
+        # Process scene root nodes
+        root_nodes = get_scene_nodes(scene)
+        scene_name = scene.name || "scene_0"
+
+        Enum.reduce(root_nodes, {obj_lines, vertex_offset, normal_offset, texcoord_offset, nil},
+          fn node_index, {lines, v_off, n_off, t_off, current_mtl} ->
+            extract_node_to_obj(document, node_index, [scene_name], lines, v_off, n_off, t_off,
+              current_mtl)
+          end)
+    end
+  end
+
+  # Recursively extract node and its children
+  defp extract_node_to_obj(
+         document,
+         node_index,
+         node_path,
+         obj_lines,
+         vertex_offset,
+         normal_offset,
+         texcoord_offset,
+         current_material
+       ) do
     nodes = document.nodes || []
 
-    # TODO: 2025-11-03 fire - Implement full mesh extraction from glTF
-    # Need to:
-    # - Extract vertices, normals, texcoords from accessors
-    # - Handle indexed and non-indexed geometry
-    # - Support multiple meshes with proper offsets
-    # - Generate face indices with proper vertex/normal/texcoord references
+    case Enum.at(nodes, node_index) do
+      nil ->
+        # Invalid node index, return unchanged
+        {obj_lines, vertex_offset, normal_offset, texcoord_offset, current_material}
 
-    {obj_lines, vertex_offset, normal_offset, texcoord_offset}
+      node ->
+        # Build updated node path
+        updated_path = build_node_path(node_path, node_index, node.name)
+
+        # Add object group
+        group_name = Enum.join(updated_path, "_")
+        lines = obj_lines ++ ["", "g #{group_name}"]
+
+        # Extract mesh if node has one
+        {lines, v_off, n_off, t_off, current_mtl} =
+          if node.mesh do
+            extract_mesh_to_obj(document, node.mesh, updated_path, lines, vertex_offset,
+              normal_offset, texcoord_offset, current_material)
+          else
+            {lines, vertex_offset, normal_offset, texcoord_offset, current_material}
+          end
+
+        # Recursively process children
+        {final_lines, final_v_off, final_n_off, final_t_off, final_mtl} =
+          Enum.reduce(node.children || [],
+            {lines, v_off, n_off, t_off, current_mtl},
+            fn child_index, {acc_lines, acc_v, acc_n, acc_t, acc_mtl} ->
+              extract_node_to_obj(document, child_index, updated_path, acc_lines, acc_v, acc_n,
+                acc_t, acc_mtl)
+            end)
+
+        {final_lines, final_v_off, final_n_off, final_t_off, final_mtl}
+    end
+  end
+
+  # Extract mesh and its primitives
+  defp extract_mesh_to_obj(
+         document,
+         mesh_index,
+         node_path,
+         obj_lines,
+         vertex_offset,
+         normal_offset,
+         texcoord_offset,
+         current_material
+       ) do
+    meshes = document.meshes || []
+
+    case Enum.at(meshes, mesh_index) do
+      nil ->
+        # Invalid mesh index, return unchanged
+        {obj_lines, vertex_offset, normal_offset, texcoord_offset, current_material}
+
+      mesh ->
+        primitives = mesh.primitives || []
+
+        Enum.reduce(primitives,
+          {obj_lines, vertex_offset, normal_offset, texcoord_offset, current_material},
+          fn primitive, {acc_lines, acc_v, acc_n, acc_t, acc_mtl} ->
+            # Convert primitive to BMesh
+            case BmeshConverter.convert_primitive_to_bmesh(document, primitive) do
+              {:ok, bmesh} ->
+                extract_primitive_bmesh_to_obj(bmesh, primitive.material, document, node_path,
+                  acc_lines, acc_v, acc_n, acc_t, acc_mtl)
+
+              {:error, _reason} ->
+                # Skip failed primitives
+                {acc_lines, acc_v, acc_n, acc_t, acc_mtl}
+            end
+          end)
+    end
+  end
+
+  # Extract primitive BMesh with material support
+  defp extract_primitive_bmesh_to_obj(
+         bmesh,
+         material_index,
+         document,
+         _node_path,
+         obj_lines,
+         vertex_offset,
+         normal_offset,
+         texcoord_offset,
+         current_material
+       ) do
+    # Get material name
+    material_name = get_material_name(document, material_index)
+
+    # Write vertices from BMesh
+    vertices = Bmesh.vertices_list(bmesh) |> Enum.sort_by(& &1.id)
+    {new_lines, new_v_off} = write_vertices_from_bmesh(vertices, obj_lines, vertex_offset)
+
+    # Write normals from BMesh
+    {new_lines, new_n_off} = write_normals_from_bmesh(bmesh, new_lines, normal_offset)
+
+    # Write texture coordinates from BMesh
+    {new_lines, new_t_off} = write_texcoords_from_bmesh(bmesh, new_lines, texcoord_offset)
+
+    # Write faces with material
+    {final_lines, updated_material} =
+      write_faces_with_material(bmesh, material_name, new_lines, new_v_off, new_n_off, new_t_off,
+        current_material)
+
+    {final_lines, new_v_off, new_n_off, new_t_off, updated_material}
+  end
+
+  # Old method kept for backward compatibility
+  defp extract_meshes_from_gltf(document, obj_lines, vertex_offset, normal_offset, texcoord_offset) do
+    # Convert glTF document to BMesh
+    case BmeshConverter.from_gltf_document(document) do
+      {:ok, bmeshes} ->
+        # Process each BMesh
+        Enum.reduce(bmeshes, {obj_lines, vertex_offset, normal_offset, texcoord_offset}, fn bmesh,
+                                                                                             {lines, v_off,
+                                                                                              n_off, t_off} ->
+          extract_bmesh_to_obj(bmesh, lines, v_off, n_off, t_off)
+        end)
+
+      {:error, reason} ->
+        # If conversion fails, return current state
+        {obj_lines, vertex_offset, normal_offset, texcoord_offset}
+    end
+  end
+
+  # Extract BMesh geometry to OBJ format
+  defp extract_bmesh_to_obj(%Bmesh{} = bmesh, obj_lines, vertex_offset, normal_offset,
+         texcoord_offset) do
+    # Add object name
+    lines = obj_lines ++ [""]
+
+    # Extract vertices from BMesh
+    vertices = Bmesh.vertices_list(bmesh) |> Enum.sort_by(& &1.id)
+    {new_lines, new_v_off} = write_vertices_from_bmesh(vertices, lines, vertex_offset)
+    lines = new_lines
+    v_off = new_v_off
+
+    # Extract normals (from vertex attributes or face normals)
+    {new_lines, new_n_off} = write_normals_from_bmesh(bmesh, lines, normal_offset)
+    lines = new_lines
+    n_off = new_n_off
+
+    # Extract texture coordinates (from loop attributes)
+    {new_lines, new_t_off} = write_texcoords_from_bmesh(bmesh, lines, texcoord_offset)
+    lines = new_lines
+    t_off = new_t_off
+
+    # Extract faces
+    lines = write_faces_from_bmesh(bmesh, lines, v_off, n_off, t_off)
+
+    {lines, v_off, n_off, t_off}
+  end
+
+  # Write vertices from BMesh
+  defp write_vertices_from_bmesh(vertices, lines, offset) do
+    vertex_lines =
+      vertices
+      |> Enum.map(fn vertex ->
+        {x, y, z} = vertex.position
+        "v #{x} #{y} #{z}"
+      end)
+
+    {lines ++ vertex_lines, offset + length(vertex_lines)}
+  end
+
+  # Write normals from BMesh (from vertex attributes or face normals)
+  defp write_normals_from_bmesh(%Bmesh{} = bmesh, lines, offset) do
+    # Try to get normals from vertex attributes first
+    vertices = Bmesh.vertices_list(bmesh) |> Enum.sort_by(& &1.id)
+
+    normals =
+      vertices
+      |> Enum.map(fn vertex ->
+        case AriaBmesh.Vertex.get_attribute(vertex, "NORMAL") do
+          nil -> nil
+          normal -> normal
+        end
+      end)
+
+    # If no vertex normals, use face normals
+    if Enum.all?(normals, &is_nil/1) do
+      faces = Bmesh.faces_list(bmesh) |> Enum.sort_by(& &1.id)
+
+      normal_lines =
+        faces
+        |> Enum.map(fn face ->
+          case face.normal do
+            nil -> nil
+            {x, y, z} -> "vn #{x} #{y} #{z}"
+          end
+        end)
+        |> Enum.reject(&is_nil/1)
+
+      {lines ++ normal_lines, offset + length(normal_lines)}
+    else
+      normal_lines =
+        normals
+        |> Enum.map(fn
+          nil -> nil
+          {x, y, z} -> "vn #{x} #{y} #{z}"
+        end)
+        |> Enum.reject(&is_nil/1)
+
+      {lines ++ normal_lines, offset + length(normal_lines)}
+    end
+  end
+
+  # Write texture coordinates from BMesh loops
+  defp write_texcoords_from_bmesh(%Bmesh{} = bmesh, lines, offset) do
+    loops = Bmesh.loops_list(bmesh) |> Enum.sort_by(& &1.id)
+
+    texcoord_lines =
+      loops
+      |> Enum.map(fn loop ->
+        case AriaBmesh.Loop.get_attribute(loop, "TEXCOORD_0") do
+          nil -> nil
+          {u, v} -> "vt #{u} #{v}"
+          [u, v] -> "vt #{u} #{v}"
+        end
+      end)
+      |> Enum.reject(&is_nil/1)
+
+    {lines ++ texcoord_lines, offset + length(texcoord_lines)}
+  end
+
+  # Write faces from BMesh with material support
+  defp write_faces_with_material(
+         %Bmesh{} = bmesh,
+         material_name,
+         lines,
+         vertex_offset,
+         normal_offset,
+         texcoord_offset,
+         current_material
+       ) do
+    faces = Bmesh.faces_list(bmesh) |> Enum.sort_by(& &1.id)
+
+    # Check if material changed
+    updated_lines =
+      cond do
+        material_name == nil ->
+          # No material, don't emit usemtl
+          lines
+
+        material_name == current_material ->
+          # Material hasn't changed, don't emit usemtl
+          lines
+
+        true ->
+          # Material changed, emit usemtl
+          lines ++ ["usemtl #{material_name}"]
+      end
+
+    # Generate face lines
+    face_lines =
+      Enum.map(faces, fn face ->
+        # Get vertex indices for this face
+        vertex_indices = Enum.map(face.vertices, fn v -> v + vertex_offset + 1 end)
+
+        # Get loop indices for texture coordinates
+        loop_indices = face.loops
+
+        # Build face string with vertex/normal/texcoord references
+        # Note: OBJ format uses v/vt/vn but we'll keep it simple for now
+        # and match the existing implementation pattern
+        if length(loop_indices) > 0 and texcoord_offset > 0 do
+          # Has texture coordinates
+          face_verts =
+            Enum.with_index(vertex_indices)
+            |> Enum.map(fn {v_idx, i} ->
+              loop_idx = Enum.at(loop_indices, i)
+              texcoord_idx = if loop_idx, do: loop_idx + texcoord_offset + 1, else: nil
+
+              if texcoord_idx do
+                "#{v_idx}/#{texcoord_idx}"
+              else
+                "#{v_idx}"
+              end
+            end)
+            |> Enum.join(" ")
+
+          "f #{face_verts}"
+        else
+          # No texture coordinates
+          face_verts = Enum.map(vertex_indices, fn v -> "#{v}" end) |> Enum.join(" ")
+          "f #{face_verts}"
+        end
+      end)
+
+    {updated_lines ++ face_lines, material_name}
+  end
+
+  # Write faces from BMesh (backward compatibility)
+  defp write_faces_from_bmesh(%Bmesh{} = bmesh, lines, vertex_offset, normal_offset,
+         texcoord_offset) do
+    {face_lines, _} = write_faces_with_material(bmesh, nil, [], vertex_offset, normal_offset,
+      texcoord_offset, nil)
+
+    lines ++ face_lines
   end
 
   defp extract_meshes_from_fbx(document, obj_lines, vertex_offset, normal_offset, texcoord_offset) do
@@ -237,10 +563,53 @@ defmodule AriaDocument.Export.Obj do
     ]
 
     mtl_lines =
-      Enum.reduce(materials, mtl_lines, fn material, acc ->
-        name = material.name || "material_#{material.typed_id}"
-        acc ++ ["", "newmtl #{name}"]
-        # TODO: 2025-11-03 fire - Extract material properties from PBR
+      materials
+      |> Enum.with_index()
+      |> Enum.reduce(mtl_lines, fn {material, index}, acc ->
+        name = material.name || "material_#{index}"
+        acc = acc ++ ["", "newmtl #{name}"]
+
+        # Extract PBR metallic roughness properties
+        acc =
+          if material.pbr_metallic_roughness do
+            pbr = material.pbr_metallic_roughness
+
+            # Extract base color factor (diffuse)
+            acc =
+              if pbr.base_color_factor do
+                [r, g, b, _a] = pbr.base_color_factor
+                acc ++ ["Kd #{r} #{g} #{b}"]
+              else
+                acc
+              end
+
+            # Extract metallic factor (for specular approximation)
+            # Convert metallic to specular approximation
+            acc =
+              if pbr.metallic_factor do
+                metallic = pbr.metallic_factor
+                # Approximate specular from metallic
+                specular = metallic * 0.8
+                acc ++ ["Ks #{specular} #{specular} #{specular}"]
+              else
+                acc
+              end
+
+            acc
+          else
+            acc
+          end
+
+        # Extract emissive factor
+        acc =
+          if material.emissive_factor do
+            [r, g, b] = material.emissive_factor
+            acc ++ ["Ke #{r} #{g} #{b}"]
+          else
+            acc
+          end
+
+        acc
       end)
 
     {:ok, Enum.join(mtl_lines, "\n") <> "\n"}
@@ -289,6 +658,59 @@ defmodule AriaDocument.Export.Obj do
 
   defp get_default_output_path_fbx(%FBXDocument{} = _document) do
     "output.obj"
+  end
+
+  # Helper functions for scene/node traversal
+
+  # Get default scene from document
+  defp get_default_scene(%AriaGltf.Document{} = document) do
+    scenes = document.scenes || []
+
+    case document.scene do
+      nil ->
+        # No default scene specified, use first scene if available
+        List.first(scenes)
+
+      scene_index when is_integer(scene_index) ->
+        # Get scene at specified index
+        Enum.at(scenes, scene_index)
+
+      _ ->
+        # Invalid scene index, use first scene
+        List.first(scenes)
+    end
+  end
+
+  # Get root node indices from scene
+  defp get_scene_nodes(%AriaGltf.Scene{} = scene) do
+    scene.nodes || []
+  end
+
+  # Get material name from document and material index
+  defp get_material_name(%AriaGltf.Document{} = document, nil), do: nil
+
+  defp get_material_name(%AriaGltf.Document{} = document, material_index)
+       when is_integer(material_index) do
+    materials = document.materials || []
+
+    case Enum.at(materials, material_index) do
+      nil ->
+        "material_#{material_index}"
+
+      %AriaGltf.Material{name: name} ->
+        name || "material_#{material_index}"
+    end
+  end
+
+  # Build node path by appending node name
+  defp build_node_path(node_path, node_index, node_name) do
+    path_name =
+      cond do
+        node_name && String.trim(node_name) != "" -> node_name
+        true -> "node_#{node_index}"
+      end
+
+    node_path ++ [path_name]
   end
 end
 

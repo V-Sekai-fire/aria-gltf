@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2025-present K. S. Ernest (iFire) Lee
 
-defmodule AriaGltf.Extensions.ExtMeshBmesh.TriangleReconstruction do
+defmodule AriaGltf.Extensions.VsekaiMeshBmesh.TriangleReconstruction do
   @moduledoc """
   Reconstruct BMesh from triangle meshes using triangle fan algorithm.
 
@@ -40,7 +40,7 @@ defmodule AriaGltf.Extensions.ExtMeshBmesh.TriangleReconstruction do
 
       iex> positions = [{0.0, 0.0, 0.0}, {1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}]
       iex> indices = [0, 1, 2]
-      iex> AriaGltf.Extensions.ExtMeshBmesh.TriangleReconstruction.from_triangles(document, primitive, positions, indices)
+      iex> AriaGltf.Extensions.VsekaiMeshBmesh.TriangleReconstruction.from_triangles(document, primitive, positions, indices)
       {:ok, %AriaBmesh.Mesh{}}
   """
   @spec from_triangles(
