@@ -90,6 +90,20 @@ defmodule AriaGltf.BmeshConverter do
   ## Returns
   - `{:ok, bmesh}` - BMesh structure
   - `{:error, reason}` - Error during conversion
+
+  ## Examples
+
+      iex> primitive = %AriaGltf.Mesh.Primitive{attributes: %{"POSITION" => 0}}
+      iex> AriaGltf.BmeshConverter.convert_primitive_to_bmesh(document, primitive)
+      {:ok, %AriaBmesh.Mesh{}}
+
+  ## ExDoc Improvements
+
+  TODO: 2025-11-03 fire - Add more detailed examples showing:
+  - Extension-based import workflow
+  - Triangle reconstruction workflow
+  - Error scenarios and recovery
+  - Integration with OBJ export pipeline
   """
   @spec convert_primitive_to_bmesh(Document.t(), Primitive.t()) ::
           {:ok, Bmesh.t()} | {:error, String.t()}

@@ -7,6 +7,30 @@ defmodule AriaDocument.Export.Obj do
 
   Supports exporting both GLTFDocument and FBXDocument sources to OBJ format.
   Handles indexed and non-indexed geometry, materials, and multiple meshes.
+
+  ## Features
+
+  - Scene/node hierarchy traversal for glTF exports
+  - Object groups (`g` commands) for organizing geometry by node hierarchy
+  - Material groups (`usemtl` commands) with automatic change detection
+  - BMesh format support for preserving topology
+  - MTL material file generation with PBR material properties
+
+  ## Scene Support
+
+  For glTF documents, the exporter:
+  - Traverses the scene/node hierarchy recursively
+  - Creates object groups for each node (`g scene_name_node_name`)
+  - Preserves material associations from primitives
+  - Handles nested node hierarchies correctly
+
+  ## Material Support
+
+  Materials are exported to MTL files with:
+  - Base color (diffuse) from PBR metallic-roughness
+  - Specular approximation from metallic factor
+  - Emissive properties
+  - Automatic material group switching in OBJ faces
   """
 
   alias AriaGltf.{Document, Mesh, Node, Material}
@@ -27,6 +51,14 @@ defmodule AriaDocument.Export.Obj do
 
       {:ok, obj_path} = AriaDocument.Export.Obj.export(gltf_document, "/path/to/output.obj")
       {:ok, obj_path} = AriaDocument.Export.Obj.export(fbx_document, "/path/to/output.obj")
+
+  ## ExDoc Improvements
+
+  TODO: 2025-11-03 fire - Add more detailed examples showing:
+  - Scene hierarchy export with multiple nodes
+  - Material group handling
+  - Error handling scenarios
+  - Integration with BMesh format
   """
   @spec export(AriaGltf.Document.t() | FBXDocument.t(), String.t(), keyword()) ::
           {:ok, String.t()} | {:error, term()}
@@ -134,7 +166,12 @@ defmodule AriaDocument.Export.Obj do
     {:ok, Enum.join(obj_lines, "\n") <> "\n"}
   end
 
-  # New scene/node traversal implementation
+  # Extract scenes and nodes to OBJ format with hierarchy preservation
+  # TODO: 2025-11-03 fire - Add ExDoc documentation explaining:
+  # - Scene traversal algorithm
+  # - Offset tracking across multiple meshes
+  # - Fallback behavior when no scene exists
+  @doc false
   defp extract_scenes_to_obj(document, obj_lines, vertex_offset, normal_offset, texcoord_offset) do
     case get_default_scene(document) do
       nil ->
@@ -159,7 +196,13 @@ defmodule AriaDocument.Export.Obj do
     end
   end
 
-  # Recursively extract node and its children
+  # Recursively extract node and its children with hierarchy preservation
+  # TODO: 2025-11-03 fire - Add ExDoc documentation explaining:
+  # - Node hierarchy traversal
+  # - Object group naming convention
+  # - Material tracking across node tree
+  # - Child node recursion pattern
+  @doc false
   defp extract_node_to_obj(
          document,
          node_index,
@@ -207,7 +250,12 @@ defmodule AriaDocument.Export.Obj do
     end
   end
 
-  # Extract mesh and its primitives
+  # Extract mesh and its primitives with material tracking
+  # TODO: 2025-11-03 fire - Add ExDoc documentation explaining:
+  # - Primitive-to-BMesh conversion
+  # - Material association per primitive
+  # - Multi-primitive mesh handling
+  @doc false
   defp extract_mesh_to_obj(
          document,
          mesh_index,
@@ -246,6 +294,11 @@ defmodule AriaDocument.Export.Obj do
   end
 
   # Extract primitive BMesh with material support
+  # TODO: 2025-11-03 fire - Add ExDoc documentation explaining:
+  # - BMesh geometry extraction (vertices, normals, texcoords)
+  # - Material name resolution
+  # - Vertex offset management
+  @doc false
   defp extract_primitive_bmesh_to_obj(
          bmesh,
          material_index,
@@ -396,7 +449,12 @@ defmodule AriaDocument.Export.Obj do
     {lines ++ texcoord_lines, offset + length(texcoord_lines)}
   end
 
-  # Write faces from BMesh with material support
+  # Write faces from BMesh with material group support
+  # TODO: 2025-11-03 fire - Add ExDoc documentation explaining:
+  # - Material change detection algorithm
+  # - OBJ face format (v/vt/vn indices)
+  # - When usemtl commands are emitted
+  @doc false
   defp write_faces_with_material(
          %Bmesh{} = bmesh,
          material_name,
@@ -663,6 +721,10 @@ defmodule AriaDocument.Export.Obj do
   # Helper functions for scene/node traversal
 
   # Get default scene from document
+  # TODO: 2025-11-03 fire - Add ExDoc documentation explaining:
+  # - Default scene selection logic (document.scene vs first scene)
+  # - Fallback behavior
+  @doc false
   defp get_default_scene(%AriaGltf.Document{} = document) do
     scenes = document.scenes || []
 
@@ -682,13 +744,19 @@ defmodule AriaDocument.Export.Obj do
   end
 
   # Get root node indices from scene
+  @doc false
   defp get_scene_nodes(%AriaGltf.Scene{} = scene) do
     scene.nodes || []
   end
 
   # Get material name from document and material index
+  # TODO: 2025-11-03 fire - Add ExDoc documentation explaining:
+  # - Material name resolution (name vs fallback)
+  # - Nil material handling
+  @doc false
   defp get_material_name(%AriaGltf.Document{} = document, nil), do: nil
 
+  @doc false
   defp get_material_name(%AriaGltf.Document{} = document, material_index)
        when is_integer(material_index) do
     materials = document.materials || []
@@ -703,6 +771,11 @@ defmodule AriaDocument.Export.Obj do
   end
 
   # Build node path by appending node name
+  # TODO: 2025-11-03 fire - Add ExDoc documentation explaining:
+  # - Node path construction for object groups
+  # - Name fallback (node_#{index} when name is nil)
+  # - Path concatenation format
+  @doc false
   defp build_node_path(node_path, node_index, node_name) do
     path_name =
       cond do
