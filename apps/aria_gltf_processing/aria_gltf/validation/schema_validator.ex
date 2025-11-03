@@ -9,7 +9,7 @@ defmodule AriaGltf.Validation.SchemaValidator do
   to ensure structural compliance with the specification.
   """
 
-  alias AriaGltf.Document
+  alias AriaGltf.{Document, Asset}
   alias AriaGltf.Validation.{Context}
 
   @doc """
@@ -98,9 +98,21 @@ defmodule AriaGltf.Validation.SchemaValidator do
         "array",
         "extensionsRequired must be an array"
       )
+      |> validate_extensions_required_subset(json)
+
+    # Validate asset constraints (minVersion <= version)
+    errors =
+      if asset = json["asset"] do
+        validate_asset_min_version(errors, asset)
+      else
+        errors
+      end
 
     # Validate numeric constraints
     errors = validate_numeric_constraints(errors, json)
+
+    # Validate buffer bounds and byteOffset alignment
+    errors = validate_buffer_constraints(errors, json)
 
     case errors do
       [] -> :ok
@@ -326,16 +338,178 @@ defmodule AriaGltf.Validation.SchemaValidator do
         errors
       end
 
-    if byte_offset = Map.get(accessor, "byteOffset") do
-      if is_integer(byte_offset) and byte_offset >= 0 do
-        errors
+    errors =
+      if byte_offset = Map.get(accessor, "byteOffset") do
+        if is_integer(byte_offset) and byte_offset >= 0 do
+          # Validate byteOffset alignment (must be multiple of component type size)
+          component_type = Map.get(accessor, "componentType")
+          if validate_byte_offset_alignment(byte_offset, component_type) do
+            errors
+          else
+            component_size = component_type_to_byte_size(component_type)
+            [
+              "Accessor #{index} byteOffset (#{byte_offset}) must be a multiple of component type size (#{component_size})" |
+              errors
+            ]
+          end
+        else
+          ["Accessor #{index} byteOffset must be non-negative integer" | errors]
+        end
       else
-        ["Accessor #{index} byteOffset must be non-negative integer" | errors]
+        errors
       end
-    else
-      errors
-    end
+
+    # Validate sparse accessor constraints if present
+    errors =
+      if sparse = Map.get(accessor, "sparse") do
+        validate_sparse_accessor(errors, sparse, index)
+      else
+        errors
+      end
+
+    errors
   end
+
+  # Validate sparse accessor structure
+  defp validate_sparse_accessor(errors, sparse, accessor_index) when is_map(sparse) do
+    errors =
+      # Validate required fields: count, indices, values
+      errors
+      |> check_required_field(sparse, "count", "Accessor #{accessor_index} sparse.count is required")
+      |> check_required_field(sparse, "indices", "Accessor #{accessor_index} sparse.indices is required")
+      |> check_required_field(sparse, "values", "Accessor #{accessor_index} sparse.values is required")
+
+    # Validate count is positive integer
+    errors =
+      case Map.get(sparse, "count") do
+        count when is_integer(count) and count > 0 ->
+          errors
+
+        count when not is_nil(count) ->
+          [
+            "Accessor #{accessor_index} sparse.count must be positive integer, got: #{inspect(count)}" |
+            errors
+          ]
+
+        _ ->
+          errors
+      end
+
+    # Validate indices structure
+    errors =
+      if indices = Map.get(sparse, "indices") do
+        if is_map(indices) do
+          validate_sparse_indices(errors, indices, accessor_index)
+        else
+          [
+            "Accessor #{accessor_index} sparse.indices must be an object" | errors
+          ]
+        end
+      else
+        errors
+      end
+
+    # Validate values structure
+    errors =
+      if values = Map.get(sparse, "values") do
+        if is_map(values) do
+          validate_sparse_values(errors, values, accessor_index)
+        else
+          ["Accessor #{accessor_index} sparse.values must be an object" | errors]
+        end
+      else
+        errors
+      end
+
+    errors
+  end
+
+  defp validate_sparse_accessor(errors, _, _), do: errors
+
+  # Validate sparse indices structure
+  defp validate_sparse_indices(errors, indices, accessor_index) do
+    errors =
+      errors
+      |> check_required_field(indices, "bufferView", "Accessor #{accessor_index} sparse.indices.bufferView is required")
+      |> check_required_field(indices, "componentType", "Accessor #{accessor_index} sparse.indices.componentType is required")
+
+    # Validate componentType enum (must be unsigned integer type)
+    errors =
+      case Map.get(indices, "componentType") do
+        ct when ct in [5121, 5123, 5125] -> # UNSIGNED_BYTE, UNSIGNED_SHORT, UNSIGNED_INT
+          errors
+
+        ct when not is_nil(ct) ->
+          [
+            "Accessor #{accessor_index} sparse.indices.componentType must be unsigned integer type (5121, 5123, or 5125), got: #{ct}" |
+            errors
+          ]
+
+        _ ->
+          errors
+      end
+
+    # Validate byteOffset alignment if present
+    errors =
+      if byte_offset = Map.get(indices, "byteOffset") do
+        component_type = Map.get(indices, "componentType")
+        if is_integer(byte_offset) and byte_offset >= 0 do
+          if validate_byte_offset_alignment(byte_offset, component_type) do
+            errors
+          else
+            component_size = component_type_to_byte_size(component_type)
+            [
+              "Accessor #{accessor_index} sparse.indices.byteOffset (#{byte_offset}) must be a multiple of component type size (#{component_size})" |
+              errors
+            ]
+          end
+        else
+          ["Accessor #{accessor_index} sparse.indices.byteOffset must be non-negative integer" | errors]
+        end
+      else
+        errors
+      end
+
+    errors
+  end
+
+  # Validate sparse values structure
+  defp validate_sparse_values(errors, values, accessor_index) do
+    errors =
+      check_required_field(errors, values, "bufferView", "Accessor #{accessor_index} sparse.values.bufferView is required")
+
+    # Validate byteOffset if present
+    errors =
+      if byte_offset = Map.get(values, "byteOffset") do
+        if is_integer(byte_offset) and byte_offset >= 0 do
+          errors
+        else
+          ["Accessor #{accessor_index} sparse.values.byteOffset must be non-negative integer" | errors]
+        end
+      else
+        errors
+      end
+
+    errors
+  end
+
+  # Validate byteOffset is a multiple of component type size
+  defp validate_byte_offset_alignment(byte_offset, component_type)
+       when is_integer(byte_offset) and is_integer(component_type) do
+    component_size = component_type_to_byte_size(component_type)
+    rem(byte_offset, component_size) == 0
+  end
+
+  defp validate_byte_offset_alignment(_, _), do: true
+
+  # Component type to byte size mapping
+  defp component_type_to_byte_size(5120), do: 1 # BYTE
+  defp component_type_to_byte_size(5121), do: 1 # UNSIGNED_BYTE
+  defp component_type_to_byte_size(5122), do: 2 # SHORT
+  defp component_type_to_byte_size(5123), do: 2 # UNSIGNED_SHORT
+  defp component_type_to_byte_size(5125), do: 4 # UNSIGNED_INT
+  defp component_type_to_byte_size(5126), do: 4 # FLOAT
+  defp component_type_to_byte_size(_), do: 1 # Default
 
   defp check_required_field(errors, map, field, message) do
     if Map.has_key?(map, field) do
@@ -363,6 +537,139 @@ defmodule AriaGltf.Validation.SchemaValidator do
       Context.add_error(ctx, :schema, error_msg)
     end)
   end
+
+  # Validate extensionsRequired is subset of extensionsUsed
+  defp validate_extensions_required_subset(errors, json) do
+    extensions_used = json["extensionsUsed"] || []
+    extensions_required = json["extensionsRequired"] || []
+
+    if is_list(extensions_used) and is_list(extensions_required) do
+      missing_required =
+        Enum.filter(extensions_required, fn req_ext ->
+          not (req_ext in extensions_used)
+        end)
+
+      if Enum.empty?(missing_required) do
+        errors
+      else
+        [
+          "extensionsRequired contains extensions not in extensionsUsed: #{inspect(missing_required)}" |
+          errors
+        ]
+      end
+    else
+      errors
+    end
+  end
+
+  # Validate asset minVersion <= version
+  defp validate_asset_min_version(errors, asset) do
+    version = Map.get(asset, "version")
+    min_version = Map.get(asset, "minVersion")
+
+    if is_binary(version) and is_binary(min_version) do
+      # Parse version strings (e.g., "2.0" -> [2, 0])
+      case parse_version_string(min_version) do
+        {:ok, [min_major, min_minor]} ->
+          case parse_version_string(version) do
+            {:ok, [major, minor]} ->
+              cond do
+                min_major > major ->
+                  [
+                    "Asset minVersion (#{min_version}) must not be greater than version (#{version})" |
+                    errors
+                  ]
+
+                min_major == major and min_minor > minor ->
+                  [
+                    "Asset minVersion (#{min_version}) must not be greater than version (#{version})" |
+                    errors
+                  ]
+
+                true ->
+                  errors
+              end
+
+            _ ->
+              errors
+          end
+
+        _ ->
+          errors
+      end
+    else
+      errors
+    end
+  end
+
+  defp parse_version_string(version) when is_binary(version) do
+    case String.split(version, ".") do
+      [major_str, minor_str] ->
+        with {major, ""} <- Integer.parse(major_str),
+             {minor, ""} <- Integer.parse(minor_str) do
+          {:ok, [major, minor]}
+        else
+          _ -> :error
+        end
+
+      _ ->
+        :error
+    end
+  end
+
+  defp parse_version_string(_), do: :error
+
+  # Validate buffer bounds (bufferView byteOffset + byteLength <= buffer.byteLength)
+  defp validate_buffer_constraints(errors, json) do
+    buffers = json["buffers"] || []
+    buffer_views = json["bufferViews"] || []
+
+    if is_list(buffers) and is_list(buffer_views) do
+      Enum.with_index(buffer_views)
+      |> Enum.reduce(errors, fn {buffer_view, bv_index}, acc ->
+        validate_buffer_view_bounds(acc, buffer_view, bv_index, buffers)
+      end)
+    else
+      errors
+    end
+  end
+
+  defp validate_buffer_view_bounds(errors, buffer_view, bv_index, buffers) when is_map(buffer_view) do
+    buffer_index = Map.get(buffer_view, "buffer")
+    byte_offset = Map.get(buffer_view, "byteOffset", 0)
+    byte_length = Map.get(buffer_view, "byteLength")
+
+    if is_integer(buffer_index) and is_integer(byte_length) do
+      if buffer_index >= 0 and buffer_index < length(buffers) do
+        buffer = Enum.at(buffers, buffer_index)
+
+        if is_map(buffer) do
+          buffer_byte_length = Map.get(buffer, "byteLength")
+
+          if is_integer(buffer_byte_length) do
+            if byte_offset + byte_length <= buffer_byte_length do
+              errors
+            else
+              [
+                "BufferView #{bv_index}: byteOffset (#{byte_offset}) + byteLength (#{byte_length}) = #{byte_offset + byte_length} exceeds buffer #{buffer_index} byteLength (#{buffer_byte_length})" |
+                errors
+              ]
+            end
+          else
+            errors
+          end
+        else
+          errors
+        end
+      else
+        errors
+      end
+    else
+      errors
+    end
+  end
+
+  defp validate_buffer_view_bounds(errors, _, _, _), do: errors
 
   @doc """
   Validates specific glTF data types and constraints.

@@ -20,6 +20,7 @@ defmodule AriaGltf.BufferView do
           extras: any() | nil
         }
 
+  @enforce_keys [:buffer, :byte_length]
   defstruct [
     :buffer,
     :byte_offset,
