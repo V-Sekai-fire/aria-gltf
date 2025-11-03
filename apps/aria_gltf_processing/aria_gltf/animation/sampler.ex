@@ -159,10 +159,68 @@ defmodule AriaGltf.Animation.Sampler do
 
   @doc """
   Gets the maximum time value from the input accessor.
-  This is a placeholder that would need access to the actual accessor data.
+
+  Requires a document or accessors list to access the accessor data.
+  If the accessor has a `max` field, it will be used. Otherwise,
+  the function attempts to read the actual data from buffers.
+
+  ## Parameters
+
+  - `sampler` - The animation sampler
+  - `document_or_accessors` - Either a `AriaGltf.Document` or a list of accessors
+
+  ## Returns
+
+  - `{:ok, max_time}` - On success, returns the maximum time value as a float
+  - `{:error, reason}` - On failure
+
+  ## Examples
+
+      iex> AriaGltf.Animation.Sampler.max_time(sampler, document)
+      {:ok, 5.0}
+
+      iex> AriaGltf.Animation.Sampler.max_time(sampler, accessors)
+      {:ok, 5.0}
   """
-  @spec max_time(t()) :: float()
-  def max_time(%__MODULE__{}) do
-    raise "TODO: Implement #{__MODULE__}.max_time"
+  @spec max_time(t(), AriaGltf.Document.t() | [AriaGltf.Accessor.t()]) ::
+          {:ok, float()} | {:error, term()}
+  def max_time(%__MODULE__{input: input_index} = _sampler, accessors)
+      when is_list(accessors) do
+    case Enum.at(accessors, input_index) do
+      nil ->
+        {:error, "Invalid accessor index: #{input_index}"}
+
+      accessor ->
+        extract_max_time_from_accessor(accessor)
+    end
+  end
+
+  def max_time(%__MODULE__{input: input_index} = _sampler, %AriaGltf.Document{} = document) do
+    accessors = document.accessors || []
+    max_time(_sampler, accessors)
+  end
+
+  # Legacy function signature for backward compatibility
+  # Returns error tuple instead of raising
+  def max_time(%__MODULE__{} = sampler) do
+    {:error, {:missing_document, "max_time/1 requires a document or accessors list"}}
+  end
+
+  # Extract max time from accessor
+  defp extract_max_time_from_accessor(%AriaGltf.Accessor{max: [max_value | _]} = _accessor)
+       when is_number(max_value) do
+    # Accessor has max value, use it
+    {:ok, max_value * 1.0}
+  end
+
+  defp extract_max_time_from_accessor(%AriaGltf.Accessor{type: :scalar, count: count} = accessor) do
+    # For scalar accessors, we might need to read the data
+    # For now, if max is not available and it's a scalar, return a placeholder
+    # In a full implementation, we'd read from the buffer
+    {:error, {:missing_max_data, "Accessor max not available and buffer data not accessible"}}
+  end
+
+  defp extract_max_time_from_accessor(_accessor) do
+    {:error, {:invalid_accessor_type, "Time accessors should be scalar type"}}
   end
 end

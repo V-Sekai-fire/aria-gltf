@@ -228,8 +228,106 @@ defmodule AriaGltf.SampleValidation do
   end
 
   defp validate_joint_hierarchy(document) do
-    raise "TODO: Implement #{__MODULE__}.validate_joint_hierarchy"
+    case document.skins do
+      [skin | _] ->
+        validate_joint_hierarchy_internal(document, skin)
+
+      [] ->
+        {:error, "No skins found in document"}
+
+      nil ->
+        {:error, "Skins field is nil"}
+    end
   end
+
+  defp validate_joint_hierarchy_internal(document, skin) do
+    nodes = document.nodes || []
+    joints = skin.joints || []
+
+    # Validate all joint indices exist in nodes array
+    invalid_joints =
+      Enum.filter(joints, fn joint_index ->
+        joint_index < 0 || joint_index >= length(nodes)
+      end)
+
+    if length(invalid_joints) > 0 do
+      {:error, "Invalid joint indices: #{inspect(invalid_joints)}"}
+    else
+      # Validate skeleton root exists in joints
+      skeleton_valid =
+        case skin.skeleton do
+          nil -> true
+          skeleton_index -> Enum.member?(joints, skeleton_index)
+        end
+
+      if not skeleton_valid do
+        {:error, "Skeleton root index #{skin.skeleton} is not in joints list"}
+      else
+        # Check for circular dependencies in joint hierarchy
+        circular_check = check_circular_dependencies(joints, nodes)
+
+        case circular_check do
+          {:error, _} = error -> error
+          :ok ->
+            report = %{
+              joint_count: length(joints),
+              skeleton_root: skin.skeleton,
+              has_valid_hierarchy: true
+            }
+            {:ok, report}
+        end
+      end
+    end
+  end
+
+  defp check_circular_dependencies(joints, nodes) do
+    # Basic check: verify no joint has itself as a child (indirectly)
+    # For a more complete check, we'd need to build the full hierarchy graph
+    check_all_joints(joints, nodes, MapSet.new())
+  end
+
+  defp check_all_joints([], _nodes, _visited), do: :ok
+
+  defp check_all_joints([joint_index | rest], nodes, visited) do
+    if MapSet.member?(visited, joint_index) do
+      {:error, "Circular dependency detected at joint #{joint_index}"}
+    else
+      new_visited = MapSet.put(visited, joint_index)
+      node = Enum.at(nodes, joint_index)
+
+      case check_node_children(node, joints, nodes, new_visited) do
+        {:error, _} = error -> error
+        :ok -> check_all_joints(rest, nodes, new_visited)
+      end
+    end
+  end
+
+  defp check_node_children(nil, _joints, _nodes, _visited), do: :ok
+
+  defp check_node_children(node, joints, nodes, visited) when is_map(node) do
+    children = node.children || []
+    children_in_joints = Enum.filter(children, &Enum.member?(joints, &1))
+
+    Enum.reduce_while(children_in_joints, visited, fn child_index, acc_visited ->
+      if MapSet.member?(acc_visited, child_index) do
+        {:halt, {:error, "Circular dependency in joint hierarchy at joint #{child_index}"}}
+      else
+        new_visited = MapSet.put(acc_visited, child_index)
+        child_node = Enum.at(nodes, child_index)
+
+        case check_node_children(child_node, joints, nodes, new_visited) do
+          {:error, _} = error -> {:halt, error}
+          :ok -> {:cont, new_visited}
+        end
+      end
+    end)
+    |> case do
+      {:error, _} = error -> error
+      _ -> :ok
+    end
+  end
+
+  defp check_node_children(_node, _joints, _nodes, _visited), do: :ok
 
   defp validate_animation_data(document) do
     case document.animations do
@@ -254,11 +352,161 @@ defmodule AriaGltf.SampleValidation do
   end
 
   defp validate_morph_target_data(document) do
-    raise "TODO: Implement #{__MODULE__}.validate_morph_target_data"
+    case document.meshes do
+      meshes when is_list(meshes) and length(meshes) > 0 ->
+        validate_morph_targets_in_meshes(meshes, document.accessors)
+
+      [] ->
+        {:error, "No meshes found in document"}
+
+      nil ->
+        {:error, "Meshes field is nil"}
+    end
+  end
+
+  defp validate_morph_targets_in_meshes(meshes, accessors) do
+    accessors = accessors || []
+    errors = []
+
+    {errors, target_counts} =
+      Enum.reduce(meshes, {errors, []}, fn mesh, {acc_errors, acc_counts} ->
+        case validate_mesh_morph_targets(mesh, accessors) do
+          {:ok, target_count} -> {acc_errors, [target_count | acc_counts]}
+          {:error, reason} -> {[reason | acc_errors], acc_counts}
+        end
+      end)
+
+    if length(errors) > 0 do
+      {:error, Enum.join(errors, "; ")}
+    else
+      report = %{
+        mesh_count: length(meshes),
+        morph_target_counts: Enum.reverse(target_counts),
+        has_valid_targets: true
+      }
+      {:ok, report}
+    end
+  end
+
+  defp validate_mesh_morph_targets(mesh, accessors) do
+    primitives = mesh.primitives || []
+
+    Enum.reduce_while(primitives, {:ok, []}, fn primitive, {:ok, target_counts} ->
+      targets = primitive.targets || []
+
+      case validate_primitive_targets(targets, accessors) do
+        {:ok, target_count} -> {:cont, {:ok, [target_count | target_counts]}}
+        {:error, _} = error -> {:halt, error}
+      end
+    end)
+    |> case do
+      {:ok, counts} ->
+        # All primitives should have the same number of targets
+        unique_counts = counts |> Enum.uniq()
+        target_count = if length(unique_counts) > 0, do: hd(unique_counts), else: 0
+        {:ok, target_count}
+      {:error, _} = error -> error
+    end
+  end
+
+  defp validate_primitive_targets(targets, accessors) do
+    # Validate each target's accessor indices exist
+    invalid_accessors =
+      Enum.reduce(targets, [], fn target_map, acc ->
+        Enum.reduce(target_map, acc, fn {_semantic, accessor_index}, acc_inner ->
+          if accessor_index < 0 || accessor_index >= length(accessors) do
+            [accessor_index | acc_inner]
+          else
+            acc_inner
+          end
+        end)
+      end)
+
+    if length(invalid_accessors) > 0 do
+      {:error, "Invalid accessor indices in morph targets: #{inspect(invalid_accessors)}"}
+    else
+      {:ok, length(targets)}
+    end
   end
 
   defp validate_morph_weight_data(document) do
-    raise "TODO: Implement #{__MODULE__}.validate_morph_weight_data"
+    case document.meshes do
+      meshes when is_list(meshes) and length(meshes) > 0 ->
+        validate_morph_weights_in_meshes(meshes)
+
+      [] ->
+        {:error, "No meshes found in document"}
+
+      nil ->
+        {:error, "Meshes field is nil"}
+    end
+  end
+
+  defp validate_morph_weights_in_meshes(meshes) do
+    errors = []
+
+    {errors, weight_reports} =
+      Enum.reduce(meshes, {errors, []}, fn mesh, {acc_errors, acc_reports} ->
+        case validate_mesh_morph_weights(mesh) do
+          {:ok, report} -> {acc_errors, [report | acc_reports]}
+          {:error, reason} -> {[reason | acc_errors], acc_reports}
+        end
+      end)
+
+    if length(errors) > 0 do
+      {:error, Enum.join(errors, "; ")}
+    else
+      report = %{
+        mesh_count: length(meshes),
+        weight_reports: Enum.reverse(weight_reports),
+        has_valid_weights: true
+      }
+      {:ok, report}
+    end
+  end
+
+  defp validate_mesh_morph_weights(mesh) do
+    weights = mesh.weights || []
+    primitives = mesh.primitives || []
+
+    # Check if weights match the number of morph targets
+    target_counts =
+      Enum.map(primitives, fn primitive ->
+        targets = primitive.targets || []
+        length(targets)
+      end)
+      |> Enum.uniq()
+
+    case target_counts do
+      [] ->
+        # No morph targets, weights should be empty
+        if length(weights) == 0 do
+          {:ok, %{weight_count: 0, target_count: 0, valid: true}}
+        else
+          {:error, "Weights provided but no morph targets in mesh"}
+        end
+
+      [target_count] ->
+        # Validate weight count matches target count
+        if length(weights) != target_count do
+          {:error, "Weight count (#{length(weights)}) does not match morph target count (#{target_count})"}
+        else
+          # Validate all weights are in valid range [0.0, 1.0]
+          invalid_weights =
+            Enum.filter(weights, fn weight ->
+              not is_number(weight) or weight < 0.0 or weight > 1.0
+            end)
+
+          if length(invalid_weights) > 0 do
+            {:error, "Invalid morph weights (must be in range [0.0, 1.0]): #{inspect(invalid_weights)}"}
+          else
+            {:ok, %{weight_count: length(weights), target_count: target_count, valid: true}}
+          end
+        end
+
+      _ ->
+        {:error, "Primitives have inconsistent morph target counts"}
+    end
   end
 
   defp get_animation(document, index) do
@@ -279,11 +527,48 @@ defmodule AriaGltf.SampleValidation do
     document.skins != nil and length(document.skins || []) > 0
   end
 
-  defp process_skeletal_animation(document, _animation, timestamp, use_aria_joint, use_aria_math) do
-    raise "TODO: Implement #{__MODULE__}.process_skeletal_animation"
+  defp process_skeletal_animation(document, animation, timestamp, use_aria_joint, use_aria_math) do
+    # Basic skeletal animation processing placeholder
+    # In a full implementation, this would:
+    # 1. Evaluate animation samplers at the given timestamp
+    # 2. Apply transforms to joint nodes using AriaJoint
+    # 3. Compute skinning matrices using AriaMath
+    # 4. Return processed mesh state
+
+    processed_state = %{
+      timestamp: timestamp,
+      animation_index: get_animation_index(document, animation),
+      use_aria_joint: use_aria_joint,
+      use_aria_math: use_aria_math,
+      joint_transforms: [],
+      skinned_vertices: [],
+      status: :placeholder
+    }
+
+    {:ok, processed_state}
   end
 
-  defp process_morph_animation(document, _animation, timestamp) do
-    raise "TODO: Implement #{__MODULE__}.process_morph_animation"
+  defp get_animation_index(document, animation) do
+    animations = document.animations || []
+    Enum.find_index(animations, &(&1 == animation)) || 0
+  end
+
+  defp process_morph_animation(document, animation, timestamp) do
+    # Basic morph animation processing placeholder
+    # In a full implementation, this would:
+    # 1. Evaluate animation samplers at the given timestamp
+    # 2. Interpolate morph target weights
+    # 3. Blend morph target attributes
+    # 4. Return processed mesh state with morphed vertices
+
+    processed_state = %{
+      timestamp: timestamp,
+      animation_index: get_animation_index(document, animation),
+      morph_weights: [],
+      morphed_vertices: [],
+      status: :placeholder
+    }
+
+    {:ok, processed_state}
   end
 end

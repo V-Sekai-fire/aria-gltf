@@ -222,8 +222,32 @@ defmodule AriaGltf.Import do
 
   defp inject_binary_buffer(document, _), do: document
 
+  defp fetch_url(url) when is_binary(url) do
+    fetch_url(String.to_charlist(url))
+  end
+
+  defp fetch_url(url) when is_list(url) do
+    # Use Erlang's built-in httpc client
+    case :httpc.request(:get, {url, []}, [
+           timeout: 30_000,
+           connect_timeout: 10_000
+         ], []) do
+      {:ok, {{_, status_code, _}, _headers, body}} when status_code >= 200 and status_code < 300 ->
+        {:ok, body}
+
+      {:ok, {{_, status_code, _}, _headers, _body}} ->
+        {:error, {:http_error, status_code}}
+
+      {:error, {:connect_failed, reason}} ->
+        {:error, {:connection_failed, reason}}
+
+      {:error, reason} ->
+        {:error, {:http_request_failed, reason}}
+    end
+  end
+
   defp fetch_url(url) do
-    raise "TODO: Implement #{__MODULE__}.fetch_url"
+    {:error, {:invalid_url, url}}
   end
 
   defp extract_base_uri(url) do

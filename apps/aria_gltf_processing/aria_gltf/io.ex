@@ -160,15 +160,117 @@ defmodule AriaGltf.IO do
   """
   @spec load_binary(String.t()) :: {:ok, Document.t()} | {:error, term()}
   def load_binary(file_path) when is_binary(file_path) do
-    raise "TODO: Implement #{__MODULE__}.load_binary"
+    alias AriaGltf.Import.BinaryLoader
+    BinaryLoader.load_glb(file_path)
   end
 
   @doc """
   Saves a glTF document as binary glTF (GLB) file.
   """
   @spec save_binary(Document.t(), String.t()) :: :ok | {:error, term()}
-  def save_binary(_document, _file_path) do
-    raise "TODO: Implement #{__MODULE__}.save_binary"
+  def save_binary(%Document{} = document, file_path) when is_binary(file_path) do
+    with :ok <- validate_document(document),
+         :ok <- ensure_directory_exists(file_path),
+         {:ok, glb_data} <- create_glb_binary(document),
+         :ok <- write_file(file_path, glb_data) do
+      :ok
+    end
+  end
+
+  def save_binary(_, _), do: {:error, :invalid_arguments}
+
+  # GLB format constants
+  @glb_magic 0x46546C67  # "glTF" in little endian
+  @glb_version 2
+  @json_chunk_type 0x4E4F534A  # "JSON" in little endian
+  @bin_chunk_type 0x004E4942  # "BIN\0" in little endian
+
+  # Creates GLB binary format from document
+  defp create_glb_binary(document) do
+    with {:ok, json_bytes} <- serialize_document_to_bytes(document),
+         {:ok, bin_data} <- extract_first_buffer_data(document),
+         {:ok, glb_bytes} <- build_glb_binary(json_bytes, bin_data) do
+      {:ok, glb_bytes}
+    end
+  end
+
+  # Serialize document to JSON bytes
+  defp serialize_document_to_bytes(document) do
+    json_map = Document.to_json(document)
+    case Jason.encode!(json_map) do
+      json_string when is_binary(json_string) ->
+        {:ok, json_string}
+      error ->
+        {:error, {:json_encode_failed, error}}
+    end
+  end
+
+  # Extract binary data from first buffer (for GLB BIN chunk)
+  defp extract_first_buffer_data(%Document{buffers: [%{data: data} | _]}) when is_binary(data) do
+    {:ok, data}
+  end
+
+  defp extract_first_buffer_data(%Document{buffers: []}) do
+    {:ok, <<>>}
+  end
+
+  defp extract_first_buffer_data(%Document{buffers: nil}) do
+    {:ok, <<>>}
+  end
+
+  defp extract_first_buffer_data(_) do
+    {:ok, <<>>}
+  end
+
+  # Build GLB binary format: header + JSON chunk + BIN chunk
+  defp build_glb_binary(json_bytes, bin_data) do
+    # Pad JSON chunk to 4-byte boundary (with spaces 0x20)
+    json_padded = pad_chunk(json_bytes, @json_chunk_type)
+    json_chunk_length = byte_size(json_padded)
+    
+    # Pad BIN chunk to 4-byte boundary (with zeros 0x00)
+    bin_padded = pad_chunk(bin_data, @bin_chunk_type)
+    bin_chunk_length = byte_size(bin_padded)
+    
+    # Calculate total length: 12 (header) + 8 + json_chunk_length + 8 + bin_chunk_length
+    total_length = 12 + 8 + json_chunk_length + 8 + bin_chunk_length
+    
+    # Build GLB structure
+    header = <<@glb_magic::little-32, @glb_version::little-32, total_length::little-32>>
+    json_chunk_header = <<json_chunk_length::little-32, @json_chunk_type::little-32>>
+    bin_chunk_header = <<bin_chunk_length::little-32, @bin_chunk_type::little-32>>
+    
+    glb_binary = header <> json_chunk_header <> json_padded <> bin_chunk_header <> bin_padded
+    {:ok, glb_binary}
+  end
+
+  # Pad chunk data to 4-byte boundary
+  defp pad_chunk(data, @json_chunk_type) do
+    # JSON chunks padded with spaces (0x20)
+    pad_json_chunk(data)
+  end
+
+  defp pad_chunk(data, @bin_chunk_type) do
+    # Binary chunks padded with zeros (0x00)
+    pad_bin_chunk(data)
+  end
+
+  defp pad_chunk(data, _), do: data
+
+  defp pad_json_chunk(data) when rem(byte_size(data), 4) == 0, do: data
+
+  defp pad_json_chunk(data) do
+    padding_size = 4 - rem(byte_size(data), 4)
+    padding = String.duplicate(<<0x20>>, padding_size)
+    data <> padding
+  end
+
+  defp pad_bin_chunk(data) when rem(byte_size(data), 4) == 0, do: data
+
+  defp pad_bin_chunk(data) do
+    padding_size = 4 - rem(byte_size(data), 4)
+    padding = :binary.copy(<<0>>, padding_size)
+    data <> padding
   end
 
   @doc """
