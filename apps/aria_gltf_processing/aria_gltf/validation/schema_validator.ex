@@ -7,28 +7,123 @@ defmodule AriaGltf.Validation.SchemaValidator do
 
   This module validates glTF documents against the official glTF 2.0 JSON schema
   to ensure structural compliance with the specification.
+
+  Uses a hybrid approach:
+  - Manual validation for critical constraints (always performed)
+  - JSON schema validation via json_xema when available (complementary)
   """
 
   alias AriaGltf.{Document, Asset}
-  alias AriaGltf.Validation.{Context}
+  alias AriaGltf.Validation.{Context, SchemaLoader}
+
+  @json_xema_available Code.ensure_loaded?(JsonXema)
 
   @doc """
   Validates a document against the glTF 2.0 JSON schema.
+
+  Uses a hybrid validation approach:
+  1. Manual validation (always performed) for critical constraints
+  2. JSON schema validation (when available) for structural compliance
+
+  ## Returns
+
+  Updated context with any validation errors
+
+  ## Examples
+
+      context = AriaGltf.Validation.SchemaValidator.validate(context)
   """
   @spec validate(Context.t()) :: Context.t()
   def validate(%Context{document: document} = context) do
     # Convert document to JSON for schema validation
     json = Document.to_json(document)
 
-    # Validate against schema
-    case validate_json_schema(json) do
-      :ok -> context
-      {:error, errors} -> add_schema_errors(context, errors)
+    # Always perform manual validation (critical constraints)
+    context = validate_json_schema_manual(context, json)
+
+    # Attempt JSON schema validation if available
+    if @json_xema_available do
+      context = validate_with_json_xema(context, json)
+      context
+    else
+      context
     end
   end
 
-  # Schema validation implementation
-  defp validate_json_schema(json) when is_map(json) do
+  # Validate using JSON schema library (json_xema)
+  defp validate_with_json_xema(context, json) do
+    case SchemaLoader.load_gltf_schema() do
+      {:ok, schema} ->
+        # Attempt to validate with json_xema
+        # Note: glTF schemas are draft-2020-12, json_xema supports up to draft-07
+        # This may have compatibility issues, so we handle errors gracefully
+        case validate_with_xema(schema, json) do
+          :ok ->
+            context
+
+          {:error, errors} ->
+            # JSON schema validation errors are warnings, not fatal
+            # (since draft version mismatch may cause false positives)
+            add_json_schema_warnings(context, errors)
+        end
+
+      {:error, _reason} ->
+        # Schema loading failed, skip JSON schema validation
+        context
+    end
+  end
+
+  # Validate with JsonXema library
+  defp validate_with_xema(schema, json) do
+    try do
+      xema = JsonXema.new(schema)
+
+      case JsonXema.validate(xema, json) do
+        :ok ->
+          :ok
+
+        {:error, %JsonXema.ValidationError{errors: errors}} ->
+          error_messages =
+            Enum.map(errors, fn error ->
+              format_xema_error(error)
+            end)
+
+          {:error, error_messages}
+
+        {:error, reason} ->
+          {:error, ["JSON schema validation error: #{inspect(reason)}"]}
+      end
+    rescue
+      e ->
+        # Handle draft version incompatibility or other issues gracefully
+        {:error, ["JSON schema validation unavailable: #{Exception.message(e)}"]}
+    end
+  end
+
+  # Format JsonXema error for reporting
+  defp format_xema_error(%{message: message, path: path}) do
+    path_str = Enum.join(path, ".")
+    if path_str == "" do
+      message
+    else
+      "#{path_str}: #{message}"
+    end
+  end
+
+  defp format_xema_error(error) when is_binary(error), do: error
+  defp format_xema_error(error), do: inspect(error)
+
+  # Add JSON schema validation warnings (not errors, since draft mismatch may cause issues)
+  defp add_json_schema_warnings(context, warnings) do
+    Enum.reduce(warnings, context, fn warning, ctx ->
+      Context.add_warning(ctx, :json_schema, warning)
+    end)
+  end
+
+  # Rename existing validate_json_schema to validate_json_schema_manual
+
+  # Manual schema validation implementation (always performed)
+  defp validate_json_schema_manual(context, json) when is_map(json) do
     # Comprehensive structural validation following glTF 2.0 specification
     errors = []
 
@@ -115,10 +210,12 @@ defmodule AriaGltf.Validation.SchemaValidator do
     errors = validate_buffer_constraints(errors, json)
 
     case errors do
-      [] -> :ok
-      _ -> {:error, Enum.reverse(errors)}
+      [] -> context
+      _ -> add_schema_errors(context, Enum.reverse(errors))
     end
   end
+
+  defp validate_json_schema_manual(context, _), do: context
 
   defp validate_asset_version(errors, asset) do
     case Map.get(asset, "version") do
