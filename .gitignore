@@ -11,3 +11,12 @@ erl_crash.dump
 /test/support/test.db-journal
 .elixir_ls
 
+# C NIF build artifacts
+apps/aria_gltf_processing/c_build/
+apps/aria_gltf_processing/priv/ufbx_nif.so
+apps/aria_gltf_processing/priv/ufbx_nif.dll
+apps/aria_gltf_processing/priv/ufbx_nif.dylib
+
+# Third-party ufbx git directory (source files are tracked)
+apps/aria_gltf_processing/thirdparty/ufbx/.git/
+

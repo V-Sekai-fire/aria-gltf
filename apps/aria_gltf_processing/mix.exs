@@ -14,6 +14,9 @@ defmodule AriaGltfProcessing.MixProject do
       lockfile: "../../mix.lock",
       elixir: "~> 1.18",
       start_permanent: Mix.env() == :prod,
+      compilers: [:elixir_make | Mix.compilers()],
+      make_targets: ["all"],
+      make_clean: ["clean"],
       deps: deps()
     ]
   end
@@ -32,7 +35,9 @@ defmodule AriaGltfProcessing.MixProject do
       {:torchx, "~> 0.10"},
       {:aria_math, git: "https://github.com/V-Sekai-fire/aria-math.git"},
       {:aria_joint, in_umbrella: true},
-      {:json_xema, "~> 0.6.5"}
+      {:json_xema, "~> 0.6.5"},
+      {:ex_mcp, git: "https://github.com/azmaveth/ex_mcp.git", ref: "46bc6fd050539b41bacd4d1409c23b1939c3728b"},
+      {:elixir_make, "~> 0.7", runtime: false}
     ]
   end
 end
