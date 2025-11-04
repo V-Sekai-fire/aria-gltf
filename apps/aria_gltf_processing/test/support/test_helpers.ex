@@ -59,6 +59,18 @@ defmodule AriaGltfProcessing.TestHelpers do
   end
 
   @doc """
+  Gets a temporary file path without creating the file.
+
+  Useful for test files that will be created by the code under test.
+  """
+  @spec temp_file_path(String.t()) :: String.t()
+  def temp_file_path(filename) do
+    tmp_dir = System.tmp_dir!()
+    timestamp = :erlang.system_time(:nanosecond)
+    Path.join(tmp_dir, "aria_gltf_test_#{timestamp}_#{filename}")
+  end
+
+  @doc """
   Removes a temporary file.
 
   Useful for cleanup in ExUnit teardown.
@@ -262,5 +274,265 @@ defmodule AriaGltfProcessing.TestHelpers do
     end)
     |> Enum.reject(&is_nil/1)
   end
+
+  @doc """
+  Compares two vertex lists with tolerance.
+
+  Returns true if all vertices match within tolerance, false otherwise.
+  Vertices can be {x, y, z} or {x, y, z, w} tuples.
+
+  ## Options
+
+  - `:tolerance` - Floating point comparison tolerance (default: `1.0e-6`)
+
+  ## Examples
+
+      vertices1 = [{0.0, 0.0, 0.0}, {1.0, 0.0, 0.0}]
+      vertices2 = [{0.0, 0.0, 0.0000001}, {1.0, 0.0, 0.0}]
+      assert TestHelpers.compare_vertices(vertices1, vertices2, tolerance: 1.0e-5)
+  """
+  @spec compare_vertices([tuple()], [tuple()], keyword()) :: boolean()
+  def compare_vertices(vertices1, vertices2, opts \\ []) do
+    tolerance = Keyword.get(opts, :tolerance, 1.0e-6)
+
+    if length(vertices1) != length(vertices2) do
+      false
+    else
+      Enum.zip(vertices1, vertices2)
+      |> Enum.all?(fn {v1, v2} ->
+        compare_vertex_tuple(v1, v2, tolerance)
+      end)
+    end
+  end
+
+  @doc """
+  Compares two face lists for topology equivalence.
+
+  Returns true if faces match (accounting for different indexing schemes).
+  Faces are lists of {v, vt, vn} tuples.
+
+  ## Examples
+
+      faces1 = [[{1, nil, nil}, {2, nil, nil}, {3, nil, nil}]]
+      faces2 = [[{1, nil, nil}, {2, nil, nil}, {3, nil, nil}]]
+      assert TestHelpers.compare_faces(faces1, faces2)
+  """
+  @spec compare_faces([list()], [list()]) :: boolean()
+  def compare_faces(faces1, faces2) do
+    if length(faces1) != length(faces2) do
+      false
+    else
+      Enum.zip(faces1, faces2)
+      |> Enum.all?(fn {face1, face2} ->
+        if length(face1) != length(face2) do
+          false
+        else
+          Enum.zip(face1, face2)
+          |> Enum.all?(fn {v1, v2} -> v1 == v2 end)
+        end
+      end)
+    end
+  end
+
+  @doc """
+  Compares two complete mesh structures.
+
+  Returns true if meshes are equivalent (vertices, faces, normals, texcoords).
+  Input should be OBJ document structures or geometry maps.
+
+  ## Options
+
+  - `:tolerance` - Floating point comparison tolerance (default: `1.0e-6`)
+
+  ## Examples
+
+      mesh1 = %{vertices: [{0.0, 0.0, 0.0}], faces: [[{1, nil, nil}]]}
+      mesh2 = %{vertices: [{0.0, 0.0, 0.0}], faces: [[{1, nil, nil}]]}
+      assert TestHelpers.compare_meshes(mesh1, mesh2)
+  """
+  @spec compare_meshes(map() | struct(), map() | struct(), keyword()) :: boolean()
+  def compare_meshes(mesh1, mesh2, opts \\ []) do
+    tolerance = Keyword.get(opts, :tolerance, 1.0e-6)
+
+    vertices_match =
+      compare_vertices(
+        get_vertices(mesh1),
+        get_vertices(mesh2),
+        tolerance: tolerance
+      )
+
+    normals_match =
+      compare_vertices(
+        get_normals(mesh1),
+        get_normals(mesh2),
+        tolerance: tolerance
+      )
+
+    texcoords_match =
+      compare_vertices(
+        get_texcoords(mesh1),
+        get_texcoords(mesh2),
+        tolerance: tolerance
+      )
+
+    faces_match = compare_faces(get_faces(mesh1), get_faces(mesh2))
+
+    vertices_match && normals_match && texcoords_match && faces_match
+  end
+
+  @doc """
+  Generates a detailed difference report between two geometries.
+
+  Returns a map with differences found in vertices, normals, texcoords, and faces.
+
+  ## Examples
+
+      geom1 = %{vertices: [{0.0, 0.0, 0.0}], faces: [[{1, nil, nil}]]}
+      geom2 = %{vertices: [{0.0, 0.0, 0.0}], faces: [[{1, nil, nil}]]}
+      diff = TestHelpers.geometry_diff(geom1, geom2)
+      assert diff.differences == []
+  """
+  @spec geometry_diff(map() | struct(), map() | struct(), keyword()) :: map()
+  def geometry_diff(geom1, geom2, opts \\ []) do
+    tolerance = Keyword.get(opts, :tolerance, 1.0e-6)
+    differences = []
+
+    differences =
+      if length(get_vertices(geom1)) != length(get_vertices(geom2)) do
+        differences ++
+          [
+            "Vertex count mismatch: #{length(get_vertices(geom1))} vs #{
+              length(get_vertices(geom2))
+            }"
+          ]
+      else
+        differences
+      end
+
+    differences =
+      if length(get_faces(geom1)) != length(get_faces(geom2)) do
+        differences ++
+          [
+            "Face count mismatch: #{length(get_faces(geom1))} vs #{
+              length(get_faces(geom2))
+            }"
+          ]
+      else
+        differences
+      end
+
+    differences =
+      if not compare_vertices(get_vertices(geom1), get_vertices(geom2),
+           tolerance: tolerance
+         ) do
+        differences ++ ["Vertex positions differ"]
+      else
+        differences
+      end
+
+    differences =
+      if not compare_faces(get_faces(geom1), get_faces(geom2)) do
+        differences ++ ["Face topology differs"]
+      else
+        differences
+      end
+
+    %{
+      match: length(differences) == 0,
+      differences: differences,
+      tolerance: tolerance
+    }
+  end
+
+  @doc """
+  Validates geometry accuracy between two sources.
+
+  Returns `:ok` if geometries match within tolerance, or `{:error, diff_report}` if they differ.
+
+  ## Options
+
+  - `:tolerance` - Floating point comparison tolerance (default: `1.0e-6`)
+
+  ## Examples
+
+      geom1 = %{vertices: [{0.0, 0.0, 0.0}], faces: [[{1, nil, nil}]]}
+      geom2 = %{vertices: [{0.0, 0.0, 0.0}], faces: [[{1, nil, nil}]]}
+      assert :ok = TestHelpers.validate_geometry_accuracy(geom1, geom2)
+  """
+  @spec validate_geometry_accuracy(map() | struct(), map() | struct(), keyword()) ::
+          :ok | {:error, map()}
+  def validate_geometry_accuracy(geom1, geom2, opts \\ []) do
+    diff = geometry_diff(geom1, geom2, opts)
+
+    if diff.match do
+      :ok
+    else
+      {:error, diff}
+    end
+  end
+
+  # Helper functions to extract geometry data from various structures
+
+  defp get_vertices(%{vertices: vertices}) when is_list(vertices), do: vertices
+  defp get_vertices(%{vertices: _}), do: []
+  defp get_vertices(%{} = struct) when is_struct(struct) do
+    # Try to access vertices field from struct
+    case Map.has_key?(struct, :vertices) do
+      true -> Map.get(struct, :vertices) || []
+      false -> []
+    end
+  end
+  defp get_vertices(_), do: []
+
+  defp get_normals(%{normals: normals}) when is_list(normals), do: normals
+  defp get_normals(%{normals: _}), do: []
+  defp get_normals(%{} = struct) when is_struct(struct) do
+    case Map.has_key?(struct, :normals) do
+      true -> Map.get(struct, :normals) || []
+      false -> []
+    end
+  end
+  defp get_normals(_), do: []
+
+  defp get_texcoords(%{texcoords: texcoords}) when is_list(texcoords), do: texcoords
+  defp get_texcoords(%{texcoords: _}), do: []
+  defp get_texcoords(%{} = struct) when is_struct(struct) do
+    case Map.has_key?(struct, :texcoords) do
+      true -> Map.get(struct, :texcoords) || []
+      false -> []
+    end
+  end
+  defp get_texcoords(_), do: []
+
+  defp get_faces(%{faces: faces}) when is_list(faces), do: faces
+  defp get_faces(%{faces: _}), do: []
+  defp get_faces(%{} = struct) when is_struct(struct) do
+    case Map.has_key?(struct, :faces) do
+      true -> Map.get(struct, :faces) || []
+      false -> []
+    end
+  end
+  defp get_faces(_), do: []
+
+  # Compare vertex tuples with tolerance
+  defp compare_vertex_tuple({x1, y1, z1, w1}, {x2, y2, z2, w2}, tolerance)
+       when is_number(w1) and is_number(w2) do
+    abs(x1 - x2) < tolerance &&
+      abs(y1 - y2) < tolerance &&
+      abs(z1 - z2) < tolerance &&
+      abs(w1 - w2) < tolerance
+  end
+
+  defp compare_vertex_tuple({x1, y1, z1}, {x2, y2, z2}, tolerance) do
+    abs(x1 - x2) < tolerance &&
+      abs(y1 - y2) < tolerance &&
+      abs(z1 - z2) < tolerance
+  end
+
+  defp compare_vertex_tuple({u1, v1}, {u2, v2}, tolerance) do
+    abs(u1 - u2) < tolerance && abs(v1 - v2) < tolerance
+  end
+
+  defp compare_vertex_tuple(_, _, _), do: false
 end
 
