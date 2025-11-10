@@ -7,7 +7,7 @@ defmodule AriaGltfProcessing.MixProject do
   def project do
     [
       app: :aria_gltf_processing,
-      version: "0.1.0",
+      version: "0.1.0-dev1",
       build_path: "../../_build",
       config_path: "../../config/config.exs",
       deps_path: "../../deps",
