@@ -35,7 +35,7 @@ defmodule AriaGltf.Import.BinaryLoader do
   # "BIN\0" in little endian
   @bin_chunk_type 0x004E4942
 
-  @type glb_result :: {:ok, {binary(), binary()}} | {:error, term()}
+  @type glb_result :: {:ok, {binary(), [binary()]}} | {:error, term()}
   @type load_result :: {:ok, Document.t()} | {:error, term()}
 
   @doc """
@@ -44,14 +44,25 @@ defmodule AriaGltf.Import.BinaryLoader do
   @spec load_glb(String.t()) :: load_result()
   def load_glb(path) do
     with {:ok, glb_data} <- File.read(path),
-         {:ok, {json_chunk, bin_chunk}} <- parse_glb(glb_data),
+         {:ok, {json_chunk, bin_chunks}} <- parse_glb(glb_data),
          {:ok, json_map} <- Jason.decode(json_chunk),
          {:ok, document} <- Document.from_json(json_map) do
-      # Assign binary chunk to the first buffer if it exists
+      # Assign binary chunks to buffers
+      # First BIN chunk goes to first buffer, subsequent chunks to subsequent buffers
       document =
-        if bin_chunk && document.buffers && length(document.buffers) > 0 do
-          [%Buffer{} = first_buffer | rest] = document.buffers
-          %{document | buffers: [%{first_buffer | data: bin_chunk} | rest]}
+        if bin_chunks && length(bin_chunks) > 0 && document.buffers && length(document.buffers) > 0 do
+          updated_buffers =
+            document.buffers
+            |> Enum.with_index()
+            |> Enum.map(fn {buffer, index} ->
+              if index < length(bin_chunks) do
+                %{buffer | data: Enum.at(bin_chunks, index)}
+              else
+                buffer
+              end
+            end)
+
+          %{document | buffers: updated_buffers}
         else
           document
         end
@@ -67,20 +78,21 @@ defmodule AriaGltf.Import.BinaryLoader do
   Parses a GLB binary file into JSON and binary chunks using ABNF grammar.
 
   Uses abnf_parsec-generated parser from glb_grammar.abnf for format validation.
+  Returns all binary chunks as a list, as GLB format can contain multiple binary chunks.
 
   ## Examples
 
       iex> glb_data = File.read!("model.glb")
       iex> AriaGltf.Import.BinaryLoader.parse_glb(glb_data)
-      {:ok, {json_chunk, binary_chunk}}
+      {:ok, {json_chunk, [binary_chunk1, binary_chunk2, ...]}}
   """
   @spec parse_glb(binary()) :: glb_result()
   def parse_glb(data) when is_binary(data) do
     # Parse GLB manually - ABNF parser validates structure
     # We use manual parsing for variable-length binary chunks
     case validate_and_parse_glb(data) do
-      {:ok, {json_chunk, bin_chunk}} ->
-        {:ok, {json_chunk, bin_chunk}}
+      {:ok, {json_chunk, bin_chunks}} ->
+        {:ok, {json_chunk, bin_chunks}}
 
       {:error, reason} ->
         {:error, reason}
@@ -111,8 +123,8 @@ defmodule AriaGltf.Import.BinaryLoader do
             {:error,
              "GLB length mismatch: header says #{total_length} bytes, file is #{byte_size(glb_data)} bytes"}
           else
-            # Parse chunks
-            parse_glb_chunks(rest, total_length - 12, nil, nil)
+            # Parse chunks (collect all binary chunks)
+            parse_glb_chunks(rest, total_length - 12, nil, [])
           end
         end
 
@@ -123,7 +135,8 @@ defmodule AriaGltf.Import.BinaryLoader do
 
   # Parse GLB chunks (manual parsing for variable-length binary)
   # Following ABNF grammar: chunk-length chunk-type chunk-data
-  defp parse_glb_chunks(data, remaining, json_chunk, bin_chunk)
+  # Collects all binary chunks as GLB format can have multiple BIN chunks
+  defp parse_glb_chunks(data, remaining, json_chunk, bin_chunks)
        when remaining > 0 and byte_size(data) >= 8 do
     # Parse chunk header: length (4 bytes, little-endian) + type (4 bytes)
     case data do
@@ -139,16 +152,16 @@ defmodule AriaGltf.Import.BinaryLoader do
           else
             <<chunk_data::binary-size(chunk_length), next_chunks::binary>> = rest
 
-            # Identify chunk type
-            {new_json_chunk, new_bin_chunk} =
+            # Identify chunk type and collect all binary chunks
+            {new_json_chunk, new_bin_chunks} =
               case normalize_chunk_type(chunk_type) do
-                "JSON" -> {chunk_data, bin_chunk}
-                "BIN" -> {json_chunk, chunk_data}
-                _ -> {json_chunk, bin_chunk} # Unknown chunk type, skip
+                "JSON" -> {chunk_data, bin_chunks}
+                "BIN" -> {json_chunk, bin_chunks ++ [chunk_data]}
+                _ -> {json_chunk, bin_chunks} # Unknown chunk type, skip
               end
 
             new_remaining = remaining - chunk_length - 8
-            parse_glb_chunks(next_chunks, new_remaining, new_json_chunk, new_bin_chunk)
+            parse_glb_chunks(next_chunks, new_remaining, new_json_chunk, new_bin_chunks)
           end
         end
 
@@ -157,9 +170,9 @@ defmodule AriaGltf.Import.BinaryLoader do
     end
   end
 
-  defp parse_glb_chunks(_, remaining, json_chunk, bin_chunk) when remaining <= 0 do
+  defp parse_glb_chunks(_, remaining, json_chunk, bin_chunks) when remaining <= 0 do
     if json_chunk do
-      {:ok, {json_chunk, bin_chunk}}
+      {:ok, {json_chunk, bin_chunks}}
     else
       {:error, "No JSON chunk found in GLB file"}
     end
