@@ -51,6 +51,7 @@ defmodule AriaGltfProcessing.MixProject do
       {:aria_joint, in_umbrella: true},
       {:json_xema, "~> 0.6.5"},
       {:ex_mcp, git: "https://github.com/azmaveth/ex_mcp.git", ref: "46bc6fd050539b41bacd4d1409c23b1939c3728b"},
+      {:abnf_parsec, "~> 2.1"},
       {:elixir_make, "~> 0.7", runtime: false}
     ]
   end
