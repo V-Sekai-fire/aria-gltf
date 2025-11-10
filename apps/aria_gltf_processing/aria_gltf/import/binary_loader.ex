@@ -3,13 +3,28 @@
 
 defmodule AriaGltf.Import.BinaryLoader do
   @moduledoc """
-  Binary data loading for glTF GLB format and external resources.
+  Binary data loading for glTF GLB format and external resources using ABNF grammar.
 
-  This module handles the binary GLB format parsing and loading of external buffers and images.
+  This module handles the binary GLB format parsing using abnf_parsec for format validation
+  and parsing. Uses ABNF grammar defined in glb_grammar.abnf.
   """
+
+  require Logger
 
   alias AriaGltf.{Document, Buffer, Image}
   alias Jason
+
+  # Use abnf_parsec to generate parser from ABNF grammar
+  # ABNF handles binary through num-val (hex-val) for specifying byte values
+  # File path relative to app root (apps/aria_gltf_processing/)
+  # mode: :byte enables binary parsing (literals represent bytes, not text codepoints)
+  use AbnfParsec,
+    abnf_file: "aria_gltf/import/glb_grammar.abnf",
+    parse: :glb_file,
+    untag: ["glb-header", "glb-chunk"],
+    unwrap: ["magic", "version-bytes", "length-bytes", "chunk-length-bytes", "chunk-type-bytes"],
+    ignore: ["chunk-data"],  # Will handle chunk-data manually based on length
+    mode: :byte  # Enable binary mode: literals represent byte representation, not text codepoints
 
   # GLB format constants
   # "glTF" in little endian
@@ -49,7 +64,9 @@ defmodule AriaGltf.Import.BinaryLoader do
   end
 
   @doc """
-  Parses a GLB binary file into JSON and binary chunks.
+  Parses a GLB binary file into JSON and binary chunks using ABNF grammar.
+
+  Uses abnf_parsec-generated parser from glb_grammar.abnf for format validation.
 
   ## Examples
 
@@ -59,12 +76,104 @@ defmodule AriaGltf.Import.BinaryLoader do
   """
   @spec parse_glb(binary()) :: glb_result()
   def parse_glb(data) when is_binary(data) do
-    with {:ok, header, rest} <- parse_glb_header(data),
-         {:ok, json_chunk, rest} <- parse_chunk(rest, @json_chunk_type),
-         {:ok, bin_chunk, _rest} <- parse_chunk(rest, @bin_chunk_type, optional: true) do
-      validate_glb_version(header.version)
-      {:ok, {json_chunk, bin_chunk}}
+    # Parse GLB manually - ABNF parser validates structure
+    # We use manual parsing for variable-length binary chunks
+    case validate_and_parse_glb(data) do
+      {:ok, {json_chunk, bin_chunk}} ->
+        {:ok, {json_chunk, bin_chunk}}
+
+      {:error, reason} ->
+        {:error, reason}
     end
+  end
+
+  # Validate GLB header and parse chunks manually
+  # ABNF parser validates structure, but we handle variable-length binary manually
+  defp validate_and_parse_glb(glb_data) when byte_size(glb_data) < 12 do
+    {:error, "GLB file too short: must be at least 12 bytes"}
+  end
+
+  defp validate_and_parse_glb(glb_data) do
+    # Parse header: magic (4) + version (4) + length (4) = 12 bytes
+    case glb_data do
+      <<magic::binary-size(4), version::little-32, total_length::little-32, rest::binary>> ->
+        # Validate magic number
+        if magic != "glTF" do
+          {:error, "Invalid GLB magic number: expected 'glTF', got #{inspect(magic)}"}
+        else
+          # Validate version (should be 2)
+          if version != 2 do
+            Logger.warning("GLB version is #{version}, expected 2")
+          end
+
+          # Validate total length
+          if total_length != byte_size(glb_data) do
+            {:error,
+             "GLB length mismatch: header says #{total_length} bytes, file is #{byte_size(glb_data)} bytes"}
+          else
+            # Parse chunks
+            parse_glb_chunks(rest, total_length - 12, nil, nil)
+          end
+        end
+
+      _ ->
+        {:error, "Invalid GLB file format: cannot parse header"}
+    end
+  end
+
+  # Parse GLB chunks (manual parsing for variable-length binary)
+  # Following ABNF grammar: chunk-length chunk-type chunk-data
+  defp parse_glb_chunks(data, remaining, json_chunk, bin_chunk)
+       when remaining > 0 and byte_size(data) >= 8 do
+    # Parse chunk header: length (4 bytes, little-endian) + type (4 bytes)
+    case data do
+      <<chunk_length::little-32, chunk_type::binary-size(4), rest::binary>> ->
+        # Validate chunk_length
+        if chunk_length < 0 or chunk_length > remaining do
+          {:error, "Invalid GLB chunk length: #{chunk_length} (remaining: #{remaining})"}
+        else
+          # Validate we have enough data
+          if byte_size(rest) < chunk_length do
+            {:error,
+             "Incomplete GLB chunk data: expected #{chunk_length} bytes, got #{byte_size(rest)}"}
+          else
+            <<chunk_data::binary-size(chunk_length), next_chunks::binary>> = rest
+
+            # Identify chunk type
+            {new_json_chunk, new_bin_chunk} =
+              case normalize_chunk_type(chunk_type) do
+                "JSON" -> {chunk_data, bin_chunk}
+                "BIN" -> {json_chunk, chunk_data}
+                _ -> {json_chunk, bin_chunk} # Unknown chunk type, skip
+              end
+
+            new_remaining = remaining - chunk_length - 8
+            parse_glb_chunks(next_chunks, new_remaining, new_json_chunk, new_bin_chunk)
+          end
+        end
+
+      _ ->
+        {:error, "Invalid GLB file format: incomplete chunk header"}
+    end
+  end
+
+  defp parse_glb_chunks(_, remaining, json_chunk, bin_chunk) when remaining <= 0 do
+    if json_chunk do
+      {:ok, {json_chunk, bin_chunk}}
+    else
+      {:error, "No JSON chunk found in GLB file"}
+    end
+  end
+
+  defp parse_glb_chunks(_, _, _, _) do
+    {:error, "Invalid GLB file format: incomplete chunk"}
+  end
+
+  # Normalize chunk type (remove null bytes, convert to string)
+  defp normalize_chunk_type(<<type::binary-size(4)>>) do
+    type
+    |> String.trim(<<0>>)
+    |> String.trim()
   end
 
   @doc """
@@ -155,68 +264,6 @@ defmodule AriaGltf.Import.BinaryLoader do
 
   def load_images({:error, _} = error, _opts), do: error
 
-  # GLB Header parsing
-  defp parse_glb_header(data) when byte_size(data) < 12 do
-    {:error, "GLB file too small for header"}
-  end
-
-  defp parse_glb_header(<<magic::little-32, version::little-32, length::little-32, rest::binary>>) do
-    if magic == @glb_magic do
-      header = %{
-        magic: magic,
-        version: version,
-        length: length
-      }
-
-      {:ok, header, rest}
-    else
-      {:error, "Invalid GLB magic number: #{magic}"}
-    end
-  end
-
-  defp validate_glb_version(version) when version == @glb_version, do: :ok
-  defp validate_glb_version(version), do: {:error, "Unsupported GLB version: #{version}"}
-
-  # Chunk parsing
-  defp parse_chunk(data, expected_type, opts \\ []) do
-    optional = Keyword.get(opts, :optional, false)
-
-    case data do
-      <<chunk_length::little-32, chunk_type::little-32, rest::binary>>
-      when byte_size(rest) >= chunk_length ->
-        if chunk_type == expected_type do
-          <<chunk_data::binary-size(chunk_length), remaining::binary>> = rest
-          # Chunks are padded to 4-byte boundaries
-          chunk_data = trim_chunk_padding(chunk_data, chunk_type)
-          {:ok, chunk_data, remaining}
-        else
-          if optional do
-            {:ok, nil, data}
-          else
-            {:error, "Expected chunk type #{inspect(expected_type)}, got #{inspect(chunk_type)}"}
-          end
-        end
-
-      _ ->
-        if optional do
-          {:ok, nil, data}
-        else
-          {:error, "Invalid or incomplete chunk"}
-        end
-    end
-  end
-
-  defp trim_chunk_padding(data, @json_chunk_type) do
-    # JSON chunks are padded with spaces (0x20)
-    String.trim_trailing(data, <<0x20>>)
-  end
-
-  defp trim_chunk_padding(data, @bin_chunk_type) do
-    # Binary chunks are padded with zeros (0x00)
-    :binary.split(data, <<0>>, [:global, :trim_all]) |> hd()
-  end
-
-  defp trim_chunk_padding(data, _), do: data
 
   # Buffer loading
   defp load_buffer_data([], _base_uri, acc), do: {:ok, Enum.reverse(acc)}

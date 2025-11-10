@@ -1,0 +1,40 @@
+; GLB (GLTF Binary) Format ABNF Grammar
+; Based on glTF 2.0 specification
+; Uses ABNF num-val (hex-val) for binary data parsing
+
+; GLB file structure
+glb-file = glb-header *(glb-chunk)
+
+; GLB header: 12 bytes
+; magic (4 bytes) + version (4 bytes) + length (4 bytes)
+glb-header = magic version-bytes length-bytes
+
+; Magic number: "glTF" (4 bytes) as hex values
+magic = %x67.6C.54.46  ; "glTF" in hex
+
+; Version: 2 (little-endian 32-bit unsigned integer)
+; Represented as 4 bytes: 02 00 00 00
+version-bytes = %x02.00.00.00
+
+; Total length: little-endian 32-bit unsigned integer (4 bytes)
+; This is variable, so we accept any 4 bytes
+length-bytes = 4OCTET
+
+; GLB chunk structure
+glb-chunk = chunk-length-bytes chunk-type-bytes chunk-data
+
+; Chunk length: 4 bytes, little-endian 32-bit unsigned integer
+chunk-length-bytes = 4OCTET
+
+; Chunk type: 4 bytes
+; "JSON" for JSON chunk, "BIN\0" for binary chunk
+chunk-type-bytes = json-chunk-type / bin-chunk-type / other-chunk-type
+
+json-chunk-type = %x4A.4F.4E.00  ; "JSON\0"
+bin-chunk-type = %x42.49.4E.00   ; "BIN\0"
+other-chunk-type = 4OCTET         ; Any other 4-byte identifier
+
+; Chunk data: variable length based on chunk-length
+; Note: This will be handled dynamically based on chunk-length
+chunk-data = *OCTET
+
