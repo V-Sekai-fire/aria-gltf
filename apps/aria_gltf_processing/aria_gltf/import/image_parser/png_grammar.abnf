@@ -1,0 +1,42 @@
+; PNG (Portable Network Graphics) Format ABNF Grammar
+; Based on PNG specification (RFC 2083)
+; Uses ABNF num-val (hex-val) for binary data parsing
+
+; PNG file structure
+png-file = png-signature *(png-chunk)
+
+; PNG signature: 8 bytes
+; 89 50 4E 47 0D 0A 1A 0A
+png-signature = %x89.50.4E.47.0D.0A.1A.0A
+
+; PNG chunk structure
+png-chunk = chunk-length chunk-type chunk-data chunk-crc
+
+; Chunk length: 4 bytes, big-endian 32-bit unsigned integer
+chunk-length = 4OCTET
+
+; Chunk type: 4 bytes (ASCII)
+chunk-type = 4OCTET
+
+; Chunk data: variable length based on chunk-length
+chunk-data = *OCTET
+
+; Chunk CRC: 4 bytes, big-endian 32-bit unsigned integer
+chunk-crc = 4OCTET
+
+; Critical chunks (must appear in order)
+; IHDR - Image header (must be first)
+ihdr-chunk = chunk-length "IHDR" ihdr-data chunk-crc
+
+; IHDR data: 13 bytes
+; width (4) + height (4) + bit_depth (1) + color_type (1) + compression (1) + filter (1) + interlace (1)
+ihdr-data = width-bytes height-bytes bit-depth color-type compression-method filter-method interlace-method
+
+width-bytes = 4OCTET
+height-bytes = 4OCTET
+bit-depth = OCTET
+color-type = OCTET
+compression-method = OCTET
+filter-method = OCTET
+interlace-method = OCTET
+

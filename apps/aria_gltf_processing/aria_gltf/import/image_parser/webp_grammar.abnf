@@ -1,0 +1,30 @@
+; WebP Format ABNF Grammar
+; Based on WebP specification
+; Uses ABNF num-val (hex-val) for binary data parsing
+
+; WebP file structure
+webp-file = webp-riff-header webp-chunks
+
+; RIFF header: 12 bytes
+; "RIFF" (4) + file_size (4) + "WEBP" (4)
+webp-riff-header = "RIFF" file-size "WEBP"
+
+file-size = 4OCTET
+
+; WebP chunks
+webp-chunks = vp8-chunk / vp8l-chunk / vp8x-chunk
+
+; VP8 chunk (lossy)
+vp8-chunk = "VP8 " vp8-data
+
+; VP8L chunk (lossless)
+vp8l-chunk = "VP8L" vp8l-data
+
+; VP8X chunk (extended format)
+vp8x-chunk = "VP8X" vp8x-data
+
+; Chunk data: variable length
+vp8-data = *OCTET
+vp8l-data = *OCTET
+vp8x-data = *OCTET
+

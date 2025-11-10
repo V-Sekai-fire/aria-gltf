@@ -1,0 +1,45 @@
+; JPEG (Joint Photographic Experts Group) Format ABNF Grammar
+; Based on JPEG specification (ISO/IEC 10918-1)
+; Uses ABNF num-val (hex-val) for binary data parsing
+
+; JPEG file structure
+jpeg-file = jpeg-soi *(jpeg-segment) jpeg-eoi
+
+; Start of Image (SOI): 2 bytes
+; FF D8
+jpeg-soi = %xFF.D8
+
+; End of Image (EOI): 2 bytes
+; FF D9
+jpeg-eoi = %xFF.D9
+
+; JPEG segment structure
+jpeg-segment = segment-marker [segment-data]
+
+; Segment marker: 2 bytes
+; FF followed by marker code
+segment-marker = %xFF marker-code
+
+marker-code = OCTET
+
+; Segment data: variable length (for segments with data)
+; Format: length (2 bytes, big-endian) + data
+segment-data = segment-length segment-content
+
+segment-length = 2OCTET
+segment-content = *OCTET
+
+; SOF (Start of Frame) markers - contain image dimensions
+; SOF0 (0xC0), SOF1 (0xC1), SOF2 (0xC2), etc.
+sof-marker = %xFF (%xC0 / %xC1 / %xC2 / %xC3 / %xC5 / %xC6 / %xC7 / %xC9 / %xCA / %xCB / %xCD / %xCE / %xCF)
+
+; SOF segment data structure (after length)
+; precision (1) + height (2) + width (2) + components (1) + component-data
+sof-data = precision-bytes height-bytes width-bytes components-count component-data
+
+precision-bytes = OCTET
+height-bytes = 2OCTET
+width-bytes = 2OCTET
+components-count = OCTET
+component-data = *OCTET
+
