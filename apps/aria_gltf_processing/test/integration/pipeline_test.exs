@@ -4,7 +4,7 @@
 defmodule AriaDocument.Integration.PipelineTest do
   use ExUnit.Case
 
-  alias AriaDocument.{Converter, Export.Obj}
+  alias AriaDocument.Export.Obj
   alias AriaGltf.{Import, BmeshConverter}
   alias AriaGltfProcessing.{TestHelpers, Fixtures}
 

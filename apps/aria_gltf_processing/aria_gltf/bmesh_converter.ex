@@ -14,7 +14,6 @@ defmodule AriaGltf.BmeshConverter do
   alias AriaBmesh.Mesh, as: Bmesh
   alias AriaGltf.{Document, Mesh.Primitive, BufferView, Accessor}
   alias AriaGltf.Extensions.VsekaiMeshBmesh.{Import, TriangleReconstruction, TriangleEncoding, Export}
-  alias AriaGltf.Import.BinaryLoader
   alias AriaGltf.Helpers.BufferManagement
 
   @vsekai_extension_name "VSEKAI_mesh_bmesh"

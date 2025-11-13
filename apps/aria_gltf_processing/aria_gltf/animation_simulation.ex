@@ -17,10 +17,10 @@ defmodule AriaGltf.AnimationSimulation do
   - Integration with AriaGltf.Skin for skeletal animation
   """
 
-  alias AriaGltf.{Animation, Skin, Node, Accessor, Document}
+  alias AriaGltf.{Animation, Skin, Document}
   alias AriaGltf.Animation.{Channel, Channel.Target, Sampler}
   alias AriaJoint
-  alias AriaMath.{Matrix4, Quaternion}
+  alias AriaMath.{Matrix4, Matrix4.Tensor, Quaternion}
 
   @type animation_state :: %{
           time: float(),
@@ -144,7 +144,7 @@ defmodule AriaGltf.AnimationSimulation do
   defp extract_channel_transform(
          %Channel{} = channel,
          samplers,
-         nodes,
+         _nodes,
          accessors,
          time
        ) do
@@ -180,21 +180,17 @@ defmodule AriaGltf.AnimationSimulation do
     if input_accessor and output_accessor do
       # Find keyframe indices surrounding time
       # This is simplified - real implementation would read actual accessor data
-      case find_keyframe_indices(input_accessor, time) do
-        {:ok, {prev_idx, next_idx}} ->
-          # Interpolate based on sampler interpolation mode
-          interpolate_value(
-            sampler.interpolation,
-            input_accessor,
-            output_accessor,
-            prev_idx,
-            next_idx,
-            time
-          )
-
-        {:error, reason} ->
-          {:error, reason}
-      end
+      {:ok, {prev_idx, next_idx}} = find_keyframe_indices(input_accessor, time)
+      
+      # Interpolate based on sampler interpolation mode
+      interpolate_value(
+        sampler.interpolation,
+        input_accessor,
+        output_accessor,
+        prev_idx,
+        next_idx,
+        time
+      )
     else
       {:error, :invalid_accessor}
     end
@@ -207,7 +203,7 @@ defmodule AriaGltf.AnimationSimulation do
   end
 
   # Interpolate value based on interpolation mode
-  defp interpolate_value(interpolation, input_accessor, output_accessor, prev_idx, next_idx, time) do
+  defp interpolate_value(interpolation, _input_accessor, _output_accessor, _prev_idx, _next_idx, _time) do
     case interpolation do
       :linear ->
         # Linear interpolation between prev and next
@@ -231,7 +227,7 @@ defmodule AriaGltf.AnimationSimulation do
     case target.path do
       "translation" ->
         # Value should be [x, y, z]
-        {:ok, Matrix4.translation({Enum.at(value, 0) || 0.0, Enum.at(value, 1) || 0.0, Enum.at(value, 2) || 0.0})}
+        {:ok, Tensor.translation_xyz(Enum.at(value, 0) || 0.0, Enum.at(value, 1) || 0.0, Enum.at(value, 2) || 0.0)}
 
       "rotation" ->
         # Value should be quaternion [x, y, z, w]
@@ -242,11 +238,11 @@ defmodule AriaGltf.AnimationSimulation do
           Enum.at(value, 2) || 0.0,
           Enum.at(value, 3) || 1.0
         )
-        {:ok, Matrix4.rotation(quat)}
+        {:ok, Tensor.rotation_from_quaternion(quat)}
 
       "scale" ->
         # Value should be [x, y, z]
-        {:ok, Matrix4.scale({Enum.at(value, 0) || 1.0, Enum.at(value, 1) || 1.0, Enum.at(value, 2) || 1.0})}
+        {:ok, Tensor.scaling({Enum.at(value, 0) || 1.0, Enum.at(value, 1) || 1.0, Enum.at(value, 2) || 1.0})}
 
       _ ->
         {:error, :invalid_target_path}

@@ -26,15 +26,6 @@ defmodule AriaGltf.Import.BinaryLoader do
     ignore: ["chunk-data"],  # Will handle chunk-data manually based on length
     mode: :byte  # Enable binary mode: literals represent byte representation, not text codepoints
 
-  # GLB format constants
-  # "glTF" in little endian
-  @glb_magic 0x46546C67
-  @glb_version 2
-  # "JSON" in little endian
-  @json_chunk_type 0x4E4F534A
-  # "BIN\0" in little endian
-  @bin_chunk_type 0x004E4942
-
   @type glb_result :: {:ok, {binary(), [binary()]}} | {:error, term()}
   @type load_result :: {:ok, Document.t()} | {:error, term()}
 

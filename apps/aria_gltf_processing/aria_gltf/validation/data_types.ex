@@ -43,7 +43,7 @@ defmodule AriaGltf.Validation.DataTypes do
     end)
   end
 
-  defp validate_accessor_component_type(context, %{component_type: component_type}, index)
+  defp validate_accessor_component_type(context, %{component_type: component_type}, _index)
        when component_type in @valid_component_types do
     context
   end
@@ -58,7 +58,7 @@ defmodule AriaGltf.Validation.DataTypes do
 
   defp validate_accessor_component_type(context, _, _), do: context
 
-  defp validate_accessor_type_enum(context, %{type: type}, index)
+  defp validate_accessor_type_enum(context, %{type: type}, _index)
        when type in @valid_accessor_types or type in @valid_accessor_type_atoms do
     context
   end
@@ -93,7 +93,7 @@ defmodule AriaGltf.Validation.DataTypes do
     end)
   end
 
-  defp validate_sampler_interpolation(context, %{interpolation: interpolation}, {anim_index, samp_index})
+  defp validate_sampler_interpolation(context, %{interpolation: interpolation}, {_anim_index, _samp_index})
        when interpolation in @valid_interpolations or interpolation in @valid_interpolation_atoms do
     context
   end
@@ -176,7 +176,7 @@ defmodule AriaGltf.Validation.DataTypes do
     end)
   end
 
-  defp validate_primitive_mode(context, %{mode: mode}, {mesh_index, prim_index})
+  defp validate_primitive_mode(context, %{mode: mode}, {_mesh_index, _prim_index})
        when mode in @valid_primitive_modes do
     context
   end
@@ -209,7 +209,7 @@ defmodule AriaGltf.Validation.DataTypes do
 
   defp validate_sampler_mag_filter(context, %{mag_filter: nil}, _), do: context
 
-  defp validate_sampler_mag_filter(context, %{mag_filter: mag_filter}, index)
+  defp validate_sampler_mag_filter(context, %{mag_filter: mag_filter}, _index)
        when mag_filter in @valid_mag_filters do
     context
   end
@@ -226,7 +226,7 @@ defmodule AriaGltf.Validation.DataTypes do
 
   defp validate_sampler_min_filter(context, %{min_filter: nil}, _), do: context
 
-  defp validate_sampler_min_filter(context, %{min_filter: min_filter}, index)
+  defp validate_sampler_min_filter(context, %{min_filter: min_filter}, _index)
        when min_filter in @valid_min_filters do
     context
   end
@@ -241,7 +241,7 @@ defmodule AriaGltf.Validation.DataTypes do
 
   defp validate_sampler_min_filter(context, _, _), do: context
 
-  defp validate_sampler_wrap_s(context, %{wrap_s: wrap_s}, index)
+  defp validate_sampler_wrap_s(context, %{wrap_s: wrap_s}, _index)
        when wrap_s in @valid_wrap_modes do
     context
   end
@@ -256,7 +256,7 @@ defmodule AriaGltf.Validation.DataTypes do
 
   defp validate_sampler_wrap_s(context, _, _), do: context
 
-  defp validate_sampler_wrap_t(context, %{wrap_t: wrap_t}, index)
+  defp validate_sampler_wrap_t(context, %{wrap_t: wrap_t}, _index)
        when wrap_t in @valid_wrap_modes do
     context
   end

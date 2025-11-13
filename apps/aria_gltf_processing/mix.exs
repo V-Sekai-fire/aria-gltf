@@ -14,9 +14,7 @@ defmodule AriaGltfProcessing.MixProject do
       lockfile: "../../mix.lock",
       elixir: "~> 1.18",
       start_permanent: Mix.env() == :prod,
-      compilers: [:elixir_make | Mix.compilers()],
-      make_targets: ["all"],
-      make_clean: ["clean"],
+      # FBX NIF compilation removed - FBX code moved to aria-fbx package
       # Source files are in the app root, not in lib/
       # Include test support files in compilation
       elixirc_paths: elixirc_paths(Mix.env()),
@@ -52,7 +50,8 @@ defmodule AriaGltfProcessing.MixProject do
       {:json_xema, "~> 0.6.5"},
       {:ex_mcp, git: "https://github.com/azmaveth/ex_mcp.git", ref: "46bc6fd050539b41bacd4d1409c23b1939c3728b"},
       {:abnf_parsec, "~> 2.1"},
-      {:elixir_make, "~> 0.7", runtime: false}
+      {:aria_fbx, git: "https://github.com/V-Sekai-fire/aria-fbx.git"},
+      {:aria_bmesh, git: "https://github.com/V-Sekai-fire/aria-bmesh.git"}
     ]
   end
 end

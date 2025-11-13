@@ -39,4 +39,3 @@ defmodule AriaGltfUmbrella.MixProject do
     ]
   end
 end
-

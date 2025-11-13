@@ -30,14 +30,12 @@ defmodule AriaGltf.Tools.GlbLoader do
   end
 
   defp load_with_desync(uri, opts) do
-    alias AriaStorage.Desync
-    
     index_path = Path.join(@desync_chunk_store, Path.basename(uri) <> ".caibx")
     output_path = Path.join(Path.dirname(uri), Path.basename(uri, ".glb") <> "_desync.glb")
     File.mkdir_p!(@desync_chunk_store)
 
-    # Try desync extract first
-    case Desync.extract(index_path, output_path, @desync_chunk_store) do
+    # Try desync extract first (using apply to avoid compile-time warnings)
+    case apply(AriaStorage.Desync, :extract, [index_path, output_path, @desync_chunk_store]) do
       {:ok, _stdout} ->
         Logger.info("Successfully extracted GLB from desync: #{output_path}")
         case Import.from_file(output_path, opts) do
@@ -59,11 +57,11 @@ defmodule AriaGltf.Tools.GlbLoader do
       {:ok, document} ->
         # Store in desync after loading (if available)
         if Code.ensure_loaded?(AriaStorage.Desync) do
-          alias AriaStorage.Desync
           index_path = Path.join(@desync_chunk_store, Path.basename(uri) <> ".caibx")
           File.mkdir_p!(@desync_chunk_store)
 
-          case Desync.make(uri, index_path, @desync_chunk_store) do
+          # Use apply to avoid compile-time warnings for optional dependency
+          case apply(AriaStorage.Desync, :make, [uri, index_path, @desync_chunk_store]) do
             {:ok, _stdout} ->
               {:ok, document}
             {:error, reason} ->

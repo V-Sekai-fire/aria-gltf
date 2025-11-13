@@ -5,7 +5,7 @@ defmodule AriaDocument.Export.ObjTest do
   use ExUnit.Case
 
   alias AriaDocument.Export.Obj
-  alias AriaGltf.{Document, Import}
+  alias AriaGltf.Import
   alias AriaFbx.Import, as: FbxImport
   alias AriaGltfProcessing.{TestHelpers, Fixtures}
 
@@ -435,7 +435,7 @@ defmodule AriaDocument.Export.ObjTest do
       # Verify faces are in valid OBJ format (v, v/vt, v//vn, or v/vt/vn)
       assert Enum.all?(face_lines, fn face_line ->
         # Remove "f " prefix
-        face_data = String.slice(face_line, 2..-1)
+        face_data = String.slice(face_line, 2..-1//1)
         vertices = String.split(face_data)
 
         Enum.all?(vertices, fn vertex ->

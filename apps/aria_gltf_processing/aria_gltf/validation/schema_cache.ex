@@ -79,7 +79,8 @@ defmodule AriaGltf.Validation.SchemaCache do
 
       {:error, _} ->
         # Clear persistent term entries
-        :persistent_term.erase()
+        # Note: persistent_term doesn't have erase/0, we'd need to track keys
+        # For now, just return ok since the agent is already stopped
         :ok
     end
   end

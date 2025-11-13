@@ -44,8 +44,9 @@ defmodule AriaEwbik.Segmentation do
       if Enum.empty?(errors) do
         {:ok, chains}
       else
-        # Return the first error found
-        {:error, elem(hd(errors), 1)}
+        # Return the first error found with proper prefix
+        error_msg = elem(hd(errors), 1)
+        {:error, "Chain analysis failed: #{error_msg}"}
       end
     rescue
       error -> {:error, "Chain analysis failed: #{inspect(error)}"}

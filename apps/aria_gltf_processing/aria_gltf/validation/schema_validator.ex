@@ -13,7 +13,7 @@ defmodule AriaGltf.Validation.SchemaValidator do
   - JSON schema validation via json_xema when available (complementary)
   """
 
-  alias AriaGltf.{Document, Asset}
+  alias AriaGltf.Document
   alias AriaGltf.Validation.{Context, ManualValidator, JsonSchemaValidator, DataTypes}
 
   @doc """

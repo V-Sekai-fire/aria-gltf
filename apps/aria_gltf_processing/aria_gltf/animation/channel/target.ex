@@ -73,7 +73,7 @@ defmodule AriaGltf.Animation.Channel.Target do
     {:ok, node}
   end
 
-  defp parse_node(_json) when is_map(_json), do: {:ok, nil}
+  defp parse_node(json) when is_map(json), do: {:ok, nil}
 
   @doc """
   Converts the animation target to JSON format.
@@ -114,7 +114,7 @@ defmodule AriaGltf.Animation.Channel.Target do
   Validates the animation target structure.
   """
   @spec validate(t()) :: :ok | {:error, term()}
-  def validate(%__MODULE___{path: path, node: node}) do
+  def validate(%__MODULE__{path: path, node: node}) do
     with :ok <- validate_path(path),
          :ok <- validate_node(node) do
     end

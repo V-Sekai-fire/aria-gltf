@@ -67,7 +67,8 @@ defmodule AriaEwbik.Solver do
           solve_multi_effector_coordinated(skeleton, effector_targets, processing_order, opts)
 
         {:error, reason} ->
-          {:error, "Chain analysis failed: #{reason}"}
+          # reason already includes "Chain analysis failed: " prefix from segmentation.ex
+          {:error, reason}
       end
     rescue
       error -> {:error, "Multi-effector solving failed: #{inspect(error)}"}

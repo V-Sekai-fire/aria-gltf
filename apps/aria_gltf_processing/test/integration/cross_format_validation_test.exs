@@ -7,7 +7,6 @@ defmodule AriaDocument.CrossFormatValidationTest do
   alias AriaDocument.Export.Obj
   alias AriaDocument.Import.Obj, as: ImportObj
   alias AriaGltf.Import
-  alias AriaGltf.IO, as: GltfIO
   alias AriaFbx.Import, as: FbxImport
   alias AriaGltfProcessing.{TestHelpers, Fixtures}
 

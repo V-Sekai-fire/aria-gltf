@@ -9,9 +9,8 @@ defmodule AriaGltf.Extensions.VsekaiMeshBmesh.Import do
   and converts it to AriaBmesh.Mesh structures.
   """
 
-  alias AriaBmesh.{Mesh, Vertex, Edge, Loop, Face}
-  alias AriaGltf.{Document, Accessor, BufferView, Buffer}
-  alias AriaGltf.Import.BinaryLoader
+  alias AriaBmesh.Mesh
+  alias AriaGltf.{Document, Buffer}
 
   @doc """
   Imports VSEKAI_mesh_bmesh extension data from a glTF primitive into BMesh.

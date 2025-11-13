@@ -273,6 +273,9 @@ defmodule AriaGltf.Camera do
   a projection matrix, which can be either perspective or orthographic.
   """
 
+  alias AriaGltf.Camera.Orthographic
+  alias AriaGltf.Camera.Perspective
+
   @type type :: :perspective | :orthographic
 
   @type t :: %__MODULE__{

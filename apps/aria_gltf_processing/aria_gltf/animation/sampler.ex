@@ -138,7 +138,7 @@ defmodule AriaGltf.Animation.Sampler do
   Validates the animation sampler structure.
   """
   @spec validate(t()) :: :ok | {:error, term()}
-  def validate(%__MODULE___{input: input, output: output, interpolation: interpolation}) do
+  def validate(%__MODULE__{input: input, output: output, interpolation: interpolation}) do
     with :ok <- validate_accessor_index(input, :input),
          :ok <- validate_accessor_index(output, :output),
          :ok <- validate_interpolation(interpolation) do
@@ -195,25 +195,25 @@ defmodule AriaGltf.Animation.Sampler do
     end
   end
 
-  def max_time(%__MODULE__{input: input_index} = _sampler, %AriaGltf.Document{} = document) do
+  def max_time(%__MODULE__{input: _input_index} = sampler, %AriaGltf.Document{} = document) do
     accessors = document.accessors || []
-    max_time(_sampler, accessors)
+    max_time(sampler, accessors)
   end
 
   # Legacy function signature for backward compatibility
   # Returns error tuple instead of raising
-  def max_time(%__MODULE__{} = sampler) do
+  def max_time(%__MODULE__{} = _sampler) do
     {:error, {:missing_document, "max_time/1 requires a document or accessors list"}}
   end
 
   # Extract max time from accessor
-  defp extract_max_time_from_accessor(%AriaGltf.Accessor{max: [max_value | _]} = _accessor)
+  defp extract_max_time_from_accessor(%AriaGltf.Accessor{max: [max_value | _]})
        when is_number(max_value) do
     # Accessor has max value, use it
     {:ok, max_value * 1.0}
   end
 
-  defp extract_max_time_from_accessor(%AriaGltf.Accessor{type: :scalar, count: count} = accessor) do
+  defp extract_max_time_from_accessor(%AriaGltf.Accessor{type: :scalar, count: _count}) do
     # For scalar accessors, we might need to read the data
     # For now, if max is not available and it's a scalar, return a placeholder
     # In a full implementation, we'd read from the buffer
