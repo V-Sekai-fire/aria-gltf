@@ -18,7 +18,7 @@ defmodule AriaGltf.Extensions.VsekaiMeshBmesh.TriangleEncoding do
   reconstruction when converting back to BMesh.
   """
 
-  alias AriaBmesh.{Mesh, Face}
+  alias AriaBmesh.Mesh
 
   @doc """
   Encodes BMesh faces to triangle indices using triangle fan algorithm.

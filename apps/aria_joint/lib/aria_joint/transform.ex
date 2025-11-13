@@ -9,7 +9,8 @@ defmodule AriaJoint.Transform do
   conversions, and transform-related operations.
   """
 
-  alias AriaMath.Matrix4
+  alias AriaMath.{Matrix4, Matrix4.Core, Matrix4.Tensor, Matrix4.Transformations}
+  alias AriaMath.Vector3.Tensor, as: Vector3Tensor
   alias AriaJoint.{Registry, DirtyState, Hierarchy}
 
   @type transform() :: Matrix4.t()
@@ -71,12 +72,12 @@ defmodule AriaJoint.Transform do
 
           parent_node ->
             parent_global = get_global(parent_node)
-            Matrix4.multiply(parent_global, updated_node.local_transform)
+            Core.multiply(parent_global, updated_node.local_transform)
         end
 
       global_transform =
         if updated_node.disable_scale do
-          Matrix4.orthogonalize_matrix(global_transform)
+          Transformations.orthogonalize(global_transform)
         else
           global_transform
         end
@@ -115,7 +116,7 @@ defmodule AriaJoint.Transform do
         registry_node -> registry_node
       end
 
-    if Matrix4.equal?(current_node.local_transform, transform) do
+    if Nx.to_number(Matrix4.equal?(current_node.local_transform, transform)) != 0 do
       current_node
     else
       updated_node = %{
@@ -156,8 +157,8 @@ defmodule AriaJoint.Transform do
 
         parent_node ->
           parent_global = get_global(parent_node)
-          {parent_inverse, _valid} = Matrix4.inverse(parent_global)
-          Matrix4.multiply(parent_inverse, global_transform)
+          parent_inverse = Core.inverse(parent_global)
+          Core.multiply(parent_inverse, global_transform)
       end
 
     updated_node = %{
@@ -183,14 +184,37 @@ defmodule AriaJoint.Transform do
   """
   @spec to_local(AriaJoint.Joint.t(), {float(), float(), float()}) :: {float(), float(), float()}
   def to_local(node, global_point) do
+    # Get the latest node from registry to ensure we have current transform
+    current_node =
+      case Registry.get_node_by_id(node.id) do
+        nil -> node
+        registry_node -> registry_node
+      end
+
     # For root nodes, global transform equals local transform
-    global_transform = if node.parent == nil do
-      node.local_transform
+    global_transform = if current_node.parent == nil do
+      current_node.local_transform
     else
-      get_global(node)
+      get_global(current_node)
     end
-    {inverse_transform, _valid} = Matrix4.inverse(global_transform)
+    inverse_transform = Core.inverse(global_transform)
     Matrix4.transform_point(inverse_transform, global_point)
+  end
+
+  # Helper: Embed 3x3 matrix into 4x4 homogeneous matrix
+  defp embed_3x3_to_4x4(matrix_3x3) do
+    [[r00, r01, r02], [r10, r11, r12], [r20, r21, r22]] = Nx.to_list(matrix_3x3)
+    Core.new(
+      r00, r01, r02, 0.0,
+      r10, r11, r12, 0.0,
+      r20, r21, r22, 0.0,
+      0.0, 0.0, 0.0, 1.0
+    )
+  end
+
+  # Helper: Extract 3x3 basis from 4x4 matrix
+  defp extract_3x3_from_4x4(matrix_4x4) do
+    matrix_4x4[[0..2, 0..2]]
   end
 
   @doc """
@@ -204,11 +228,18 @@ defmodule AriaJoint.Transform do
   """
   @spec to_global(AriaJoint.Joint.t(), {float(), float(), float()}) :: {float(), float(), float()}
   def to_global(node, local_point) do
+    # Get the latest node from registry to ensure we have current transform
+    current_node =
+      case Registry.get_node_by_id(node.id) do
+        nil -> node
+        registry_node -> registry_node
+      end
+
     # For root nodes, global transform equals local transform
-    global_transform = if node.parent == nil do
-      node.local_transform
+    global_transform = if current_node.parent == nil do
+      current_node.local_transform
     else
-      get_global(node)
+      get_global(current_node)
     end
     Matrix4.transform_point(global_transform, local_point)
   end
@@ -236,21 +267,35 @@ defmodule AriaJoint.Transform do
 
       if parent_node != nil do
         parent_global = get_global(parent_node)
-        parent_basis = Matrix4.extract_basis(parent_global)
-        parent_inverse = Matrix4.transpose(parent_basis)
+        parent_basis_3x3 = Matrix4.extract_basis(parent_global)
+        # Convert 3x3 to 4x4 for matrix operations
+        parent_basis = embed_3x3_to_4x4(parent_basis_3x3)
+        parent_inverse_3x3 = Matrix4.transpose(parent_basis_3x3)
+        parent_inverse = embed_3x3_to_4x4(parent_inverse_3x3)
 
         # new_rot = parent_inverse * basis * parent_basis * local_basis
-        local_basis = Matrix4.extract_basis(node.local_transform)
+        local_basis_3x3 = Matrix4.extract_basis(node.local_transform)
+        local_basis = embed_3x3_to_4x4(local_basis_3x3)
 
-        new_local_basis =
+        new_local_basis_4x4 =
           parent_inverse
-          |> Matrix4.multiply(basis)
-          |> Matrix4.multiply(parent_basis)
-          |> Matrix4.multiply(local_basis)
+          |> Core.multiply(basis)
+          |> Core.multiply(parent_basis)
+          |> Core.multiply(local_basis)
+        
+        # Extract 3x3 basis from result
+        new_local_basis = extract_3x3_from_4x4(new_local_basis_4x4)
 
-        # Update local transform with new basis
-        {translation, _rotation, scale} = Matrix4.decompose(node.local_transform)
-        new_local_transform = Matrix4.compose(translation, new_local_basis, scale)
+        # Update local transform with new basis (convert back to 4x4)
+        {translation_tuple, _rotation, scale_tuple} = Matrix4.decompose(node.local_transform)
+        {tx, ty, tz} = translation_tuple
+        {sx, sy, sz} = scale_tuple
+        scale_vec = Vector3Tensor.new(sx, sy, sz)
+        new_local_basis_4x4 = embed_3x3_to_4x4(new_local_basis)
+        # Manually compose T * R * S since we have rotation as 4x4 matrix, not quaternion
+        t_matrix = Tensor.translation_xyz(tx, ty, tz)
+        s_matrix = Tensor.scaling(scale_vec)
+        new_local_transform = Core.multiply(t_matrix, Core.multiply(new_local_basis_4x4, s_matrix))
 
         updated_node = %{
           node
@@ -282,10 +327,15 @@ defmodule AriaJoint.Transform do
     rotation_matrix = node.rotation
     {sx, sy, sz} = node.scale
     scale_matrix = Matrix4.scaling({sx, sy, sz})
-    new_basis = Matrix4.multiply(rotation_matrix, scale_matrix)
+    new_basis = Core.multiply(rotation_matrix, scale_matrix)
 
-    {translation, _old_rotation, _old_scale} = Matrix4.decompose(node.local_transform)
-    new_local_transform = Matrix4.compose(translation, new_basis, {sx, sy, sz})
+    {translation_tuple, _old_rotation, _old_scale} = Matrix4.decompose(node.local_transform)
+    {tx, ty, tz} = translation_tuple
+    scale_vec = Vector3Tensor.new(sx, sy, sz)
+    # Manually compose T * R * S since we have rotation as 4x4 matrix, not quaternion
+    t_matrix = Tensor.translation_xyz(tx, ty, tz)
+    s_matrix = Tensor.scaling(scale_vec)
+    new_local_transform = Core.multiply(t_matrix, Core.multiply(new_basis, s_matrix))
 
     updated_node = %{
       node

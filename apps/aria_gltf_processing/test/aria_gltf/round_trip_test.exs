@@ -4,7 +4,7 @@
 defmodule AriaGltf.RoundTripTest do
   use ExUnit.Case, async: true
 
-  alias AriaGltf.{IO, Import, Document, Asset, Scene, Node, Mesh, Material}
+  alias AriaGltf.{IO, Import}
   alias AriaGltfProcessing.{Fixtures, TestHelpers}
 
   describe "round-trip: Import -> Export -> Re-import" do

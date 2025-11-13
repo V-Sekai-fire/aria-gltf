@@ -9,7 +9,6 @@ defmodule AriaGltf.Import.ImageParser.WebpParser do
   """
 
   require Logger
-  import Bitwise
 
   # Use abnf_parsec to generate parser from ABNF grammar
   # mode: :byte enables binary parsing (literals represent bytes, not text codepoints)
@@ -67,7 +66,7 @@ defmodule AriaGltf.Import.ImageParser.WebpParser do
   end
 
   # Parse WebP chunk (VP8, VP8L, or VP8X)
-  defp parse_webp_chunk(<<chunk_type::binary-size(4), chunk_size::32-little, chunk_data::binary>>) do
+  defp parse_webp_chunk(<<chunk_type::binary-size(4), _chunk_size::32-little, chunk_data::binary>>) do
     case chunk_type do
       "VP8 " ->
         # VP8 lossy format - dimensions are in first few bytes

@@ -4,10 +4,9 @@
 defmodule AriaGltf.BmeshConverterTest do
   use ExUnit.Case
 
-  alias AriaGltf.{BmeshConverter, Document, Import}
-  alias AriaGltf.Mesh.Primitive
+  alias AriaGltf.{BmeshConverter, Import}
   alias AriaBmesh.Mesh, as: Bmesh
-  alias AriaGltfProcessing.{TestHelpers, Fixtures}
+  alias AriaGltfProcessing.Fixtures
 
   describe "primitive to BMesh conversion" do
     test "converts primitive with indexed mesh" do

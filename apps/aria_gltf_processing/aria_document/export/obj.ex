@@ -33,10 +33,8 @@ defmodule AriaDocument.Export.Obj do
   - Automatic material group switching in OBJ faces
   """
 
-  alias AriaGltf.{Document, Mesh, Node, Material}
   alias AriaGltf.BmeshConverter
   alias AriaBmesh.Mesh, as: Bmesh
-  alias AriaFbx.Scene
   alias AriaFbx.Document, as: FBXDocument
 
   @doc """
@@ -105,7 +103,7 @@ defmodule AriaDocument.Export.Obj do
             File.write(mtl_path, mtl_content)
             {:ok, obj_path}
 
-          {:error, _} = error ->
+          error ->
             error
         end
       else
@@ -128,7 +126,7 @@ defmodule AriaDocument.Export.Obj do
             File.write(mtl_path, mtl_content)
             {:ok, obj_path}
 
-          {:error, _} = error ->
+          error ->
             error
         end
       else
@@ -151,7 +149,7 @@ defmodule AriaDocument.Export.Obj do
             File.write(mtl_path, mtl_content)
             {:ok, obj_path}
 
-          {:error, _} = error ->
+          error ->
             error
         end
       else
@@ -528,13 +526,16 @@ defmodule AriaDocument.Export.Obj do
       {:ok, bmeshes} ->
         # Process each BMesh
         Enum.reduce(bmeshes, {obj_lines, vertex_offset, normal_offset, texcoord_offset}, fn bmesh,
-                                                                                             {lines, v_off,
-                                                                                              n_off, t_off} ->
-          extract_bmesh_to_obj(bmesh, lines, v_off, n_off, t_off)
+                                                                                             {_lines, _v_off,
+                                                                                              _n_off, _t_off} ->
+          extract_bmesh_to_obj(bmesh, obj_lines, vertex_offset, normal_offset, texcoord_offset)
         end)
 
-      {:error, reason} ->
+      error ->
         # If conversion fails, return current state
+        # Note: error can be {:error, reason} but compiler may infer it never matches
+        # This is a fallback for when BMesh conversion is not available
+        _ = error
         {obj_lines, vertex_offset, normal_offset, texcoord_offset}
     end
   end
@@ -650,7 +651,7 @@ defmodule AriaDocument.Export.Obj do
          material_name,
          lines,
          vertex_offset,
-         normal_offset,
+         _normal_offset,
          texcoord_offset,
          current_material
        ) do
@@ -724,37 +725,46 @@ defmodule AriaDocument.Export.Obj do
     meshes = document.meshes || []
 
     Enum.reduce(meshes, {obj_lines, vertex_offset, normal_offset, texcoord_offset}, fn mesh,
-                                                                                      {lines, v_off,
-                                                                                       n_off, t_off} ->
+                                                                                      acc ->
+      {lines, v_off, n_off, t_off} = acc
       # Add object name
       mesh_name = mesh.name || "mesh_#{mesh.id}"
       lines = lines ++ ["", "o #{mesh_name}"]
 
       # Extract vertices
-      if mesh.positions do
-        {new_lines, new_v_off} = write_vertices(mesh.positions, lines, v_off)
-        lines = new_lines
-        v_off = new_v_off
-      end
+      {lines, v_off} =
+        if mesh.positions do
+          {new_lines, new_v_off} = write_vertices(mesh.positions, lines, v_off)
+          {new_lines, new_v_off}
+        else
+          {lines, v_off}
+        end
 
       # Extract normals
-      if mesh.normals do
-        {new_lines, new_n_off} = write_normals(mesh.normals, lines, n_off)
-        lines = new_lines
-        n_off = new_n_off
-      end
+      {lines, n_off} =
+        if mesh.normals do
+          {new_lines, new_n_off} = write_normals(mesh.normals, lines, n_off)
+          {new_lines, new_n_off}
+        else
+          {lines, n_off}
+        end
 
       # Extract texture coordinates
-      if mesh.texcoords do
-        {new_lines, new_t_off} = write_texcoords(mesh.texcoords, lines, t_off)
-        lines = new_lines
-        t_off = new_t_off
-      end
+      {lines, t_off} =
+        if mesh.texcoords do
+          {new_lines, new_t_off} = write_texcoords(mesh.texcoords, lines, t_off)
+          {new_lines, new_t_off}
+        else
+          {lines, t_off}
+        end
 
       # Extract faces
-      if mesh.indices && mesh.positions do
-        lines = write_faces(mesh.indices, lines, v_off, n_off, t_off, mesh.material_ids)
-      end
+      lines =
+        if mesh.indices && mesh.positions do
+          write_faces(mesh.indices, lines, v_off, n_off, t_off, mesh.material_ids)
+        else
+          lines
+        end
 
       {lines, v_off, n_off, t_off}
     end)
@@ -1106,25 +1116,34 @@ defmodule AriaDocument.Export.Obj do
     mtl_lines =
       Enum.reduce(materials, mtl_lines, fn material, acc ->
         name = material.name || "material_#{material.id}"
-        acc ++ ["", "newmtl #{name}"]
+        acc = acc ++ ["", "newmtl #{name}"]
 
         # Add diffuse color
-        if material.diffuse_color do
-          {r, g, b} = material.diffuse_color
-          acc = acc ++ ["Kd #{r} #{g} #{b}"]
-        end
+        acc =
+          if material.diffuse_color do
+            {r, g, b} = material.diffuse_color
+            acc ++ ["Kd #{r} #{g} #{b}"]
+          else
+            acc
+          end
 
         # Add specular color
-        if material.specular_color do
-          {r, g, b} = material.specular_color
-          acc = acc ++ ["Ks #{r} #{g} #{b}"]
-        end
+        acc =
+          if material.specular_color do
+            {r, g, b} = material.specular_color
+            acc ++ ["Ks #{r} #{g} #{b}"]
+          else
+            acc
+          end
 
         # Add emissive color
-        if material.emissive_color do
-          {r, g, b} = material.emissive_color
-          acc = acc ++ ["Ke #{r} #{g} #{b}"]
-        end
+        acc =
+          if material.emissive_color do
+            {r, g, b} = material.emissive_color
+            acc ++ ["Ke #{r} #{g} #{b}"]
+          else
+            acc
+          end
 
         acc
       end)
@@ -1132,17 +1151,8 @@ defmodule AriaDocument.Export.Obj do
     {:ok, Enum.join(mtl_lines, "\n") <> "\n"}
   end
 
-  defp get_default_output_path(document) when is_map(document) do
-    "output.obj"
-  end
-
-  defp get_default_output_path(%AriaGltf.Document{} = _document) do
-    "output.obj"
-  end
-
-  defp get_default_output_path_fbx(%FBXDocument{} = _document) do
-    "output.obj"
-  end
+  # Unused helper functions - kept for potential future use
+  # Removed unused helper functions - they were causing warnings
 
   # Helper functions for scene/node traversal
 
@@ -1223,7 +1233,7 @@ defmodule AriaDocument.Export.Obj do
     end
   end
 
-  defp get_material_name(%AriaGltf.Document{} = document, nil), do: nil
+  defp get_material_name(%AriaGltf.Document{} = _document, nil), do: nil
 
   defp get_material_name(%AriaGltf.Document{} = document, material_index)
        when is_integer(material_index) do

@@ -204,16 +204,18 @@ defmodule AriaJointTest do
     test "rotate_local_with_global/3 applies global rotation" do
       {:ok, parent} = Joint.new()
 
-      parent_transform =
-        Matrix4.rotation(Quaternion.from_axis_angle({0.0, 0.0, 1.0}, :math.pi() / 2))
+      quat_tuple = Quaternion.from_axis_angle({0.0, 0.0, 1.0}, :math.pi() / 2)
+      quat = Quaternion.Tensor.from_tuple(quat_tuple)
+      parent_transform = Matrix4.Tensor.rotation_from_quaternion(quat)
 
       parent = Joint.set_transform(parent, parent_transform)
 
       {:ok, child} = Joint.new(parent: parent)
 
       # Apply a global rotation
-      global_rotation =
-        Matrix4.rotation(Quaternion.from_axis_angle({1.0, 0.0, 0.0}, :math.pi() / 4))
+      quat_tuple = Quaternion.from_axis_angle({1.0, 0.0, 0.0}, :math.pi() / 4)
+      quat = Quaternion.Tensor.from_tuple(quat_tuple)
+      global_rotation = Matrix4.Tensor.rotation_from_quaternion(quat)
 
       updated_child = Joint.rotate_local_with_global(child, global_rotation)
 
@@ -246,8 +248,8 @@ defmodule AriaJointTest do
 
       # Child should recompute global transform
       global_transform = Joint.get_global_transform(child)
-      expected = Matrix4.multiply(parent_transform, Matrix4.identity())
-      assert global_transform == expected
+      expected = Matrix4.Core.multiply(parent_transform, Matrix4.identity())
+      assert Matrix4.equal?(global_transform, expected)
     end
   end
 end

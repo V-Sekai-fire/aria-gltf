@@ -77,7 +77,7 @@ defmodule AriaGltf.Import.ImageParser.JpegParser do
     end
   end
 
-  defp find_sof_marker(<<0xFF, marker, length::16-big, rest::binary>>) do
+  defp find_sof_marker(<<0xFF, _marker, length::16-big, rest::binary>>) do
     # Skip non-SOF markers and continue searching
     segment_size = length - 2
 

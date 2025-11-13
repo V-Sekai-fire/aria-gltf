@@ -14,8 +14,7 @@ defmodule AriaGltf.Extensions.VsekaiMeshBmesh.Export do
   - More robust edge-face connection handling
   """
 
-  alias AriaBmesh.{Mesh, Vertex, Edge, Loop, Face}
-  alias AriaBmesh.Topology
+  alias AriaBmesh.Mesh
 
   @type buffer_view_id :: non_neg_integer()
   @type accessor_id :: non_neg_integer()
@@ -216,8 +215,8 @@ defmodule AriaGltf.Extensions.VsekaiMeshBmesh.Export do
 
         # Calculate end offsets (for next face)
         vertex_end = vertex_offset + length(new_vertices)
-        edge_end = edge_offset + length(new_edges)
-        loop_end = loop_offset + length(new_loops)
+        _edge_end = edge_offset + length(new_edges)
+        _loop_end = loop_offset + length(new_loops)
 
         offsets_entry = <<vertex_offset::little-unsigned-32, vertex_end::little-unsigned-32,
                          loop_offset::little-unsigned-32>>
@@ -248,7 +247,7 @@ defmodule AriaGltf.Extensions.VsekaiMeshBmesh.Export do
 
     # Add final offset entry (for range extraction: data[offsets[i]:offsets[i+1]])
     final_vertex_offset = length(vertices_list)
-    final_edge_offset = length(edges_list)
+    _final_edge_offset = length(edges_list)
     final_loop_offset = length(loops_list)
     final_offset = <<final_vertex_offset::little-unsigned-32, final_vertex_offset::little-unsigned-32,
                      final_loop_offset::little-unsigned-32>>

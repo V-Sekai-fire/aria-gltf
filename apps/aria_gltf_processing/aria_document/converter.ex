@@ -13,7 +13,7 @@ defmodule AriaDocument.Converter do
   Supports ufbx test validation methodology with FBX + OBJ sequences.
   """
 
-  alias AriaFbx.{Document, Import}
+  alias AriaFbx.Import
   alias AriaDocument.Export.Obj
 
   @doc """

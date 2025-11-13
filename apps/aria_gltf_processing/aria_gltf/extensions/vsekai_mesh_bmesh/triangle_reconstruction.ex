@@ -20,8 +20,8 @@ defmodule AriaGltf.Extensions.VsekaiMeshBmesh.TriangleReconstruction do
   This ensures unambiguous reconstruction by requiring distinct anchor vertices.
   """
 
-  alias AriaBmesh.{Mesh, Vertex, Edge, Loop, Face}
-  alias AriaGltf.{Document, Accessor, BufferView}
+  alias AriaBmesh.{Mesh, Edge, Loop}
+  alias AriaGltf.Document
 
   @doc """
   Reconstructs BMesh from glTF triangle mesh data.
@@ -49,7 +49,7 @@ defmodule AriaGltf.Extensions.VsekaiMeshBmesh.TriangleReconstruction do
           [{float(), float(), float()}],
           [non_neg_integer()]
         ) :: {:ok, Mesh.t()} | {:error, String.t()}
-  def from_triangles(%Document{} = document, %AriaGltf.Mesh.Primitive{} = primitive, positions, indices) do
+  def from_triangles(%Document{} = _document, %AriaGltf.Mesh.Primitive{} = _primitive, positions, indices) do
     bmesh = Mesh.new()
 
     with {:ok, bmesh} <- create_vertices_from_positions(bmesh, positions),
@@ -192,7 +192,7 @@ defmodule AriaGltf.Extensions.VsekaiMeshBmesh.TriangleReconstruction do
     faces = Mesh.faces_list(bmesh)
 
     {bmesh, _} =
-      Enum.reduce(faces, {bmesh, []}, fn face, {mesh, face_edges_acc} ->
+      Enum.reduce(faces, {bmesh, []}, fn face, {mesh, _face_edges_acc} ->
         vertices = face.vertices
 
         # Create edges between consecutive vertices (and wrap around)
@@ -318,9 +318,8 @@ defmodule AriaGltf.Extensions.VsekaiMeshBmesh.TriangleReconstruction do
   end
 
   # Setup radial navigation around edges (non-manifold support)
+  # Uses tombstones to detect and prevent cycles during setup
   defp setup_loop_radial_navigation(%Mesh{} = bmesh) do
-    edges = Mesh.edges_list(bmesh)
-
     # For each edge, collect all loops that use it
     edge_to_loops =
       Enum.reduce(bmesh.loops, %{}, fn {loop_id, loop}, acc ->
@@ -330,30 +329,42 @@ defmodule AriaGltf.Extensions.VsekaiMeshBmesh.TriangleReconstruction do
 
     # Setup radial navigation for each edge's loops
     updated_loops =
-      Enum.reduce(edge_to_loops, bmesh.loops, fn {edge_id, loop_ids}, loops ->
+      Enum.reduce(edge_to_loops, bmesh.loops, fn {_edge_id, loop_ids}, loops ->
         if length(loop_ids) >= 2 do
-          # Create circular linked list
+          # Use tombstones to detect cycles: track which loops we've already processed
+          visited = MapSet.new()
+
+          # Create circular linked list with cycle detection
           loop_ids
           |> Enum.with_index()
-          |> Enum.reduce(loops, fn {loop_id, i}, acc ->
-            loop = Map.get(acc, loop_id)
-
-            if loop do
-              prev_id =
-                Enum.at(loop_ids, rem(i - 1 + length(loop_ids), length(loop_ids)))
-
-              next_id = Enum.at(loop_ids, rem(i + 1, length(loop_ids)))
-
-              updated_loop =
-                loop
-                |> Loop.set_radial_prev(prev_id)
-                |> Loop.set_radial_next(next_id)
-
-              Map.put(acc, loop_id, updated_loop)
+          |> Enum.reduce({loops, visited}, fn {loop_id, i}, {acc, visited_set} ->
+            # Check tombstone: if we've already processed this loop, skip to prevent cycles
+            if MapSet.member?(visited_set, loop_id) do
+              # Cycle detected, skip this loop
+              {acc, visited_set}
             else
-              acc
+              loop = Map.get(acc, loop_id)
+
+              if loop do
+                prev_id =
+                  Enum.at(loop_ids, rem(i - 1 + length(loop_ids), length(loop_ids)))
+
+                next_id = Enum.at(loop_ids, rem(i + 1, length(loop_ids)))
+
+                updated_loop =
+                  loop
+                  |> Loop.set_radial_prev(prev_id)
+                  |> Loop.set_radial_next(next_id)
+
+                # Mark as visited (tombstone)
+                new_visited = MapSet.put(visited_set, loop_id)
+                {Map.put(acc, loop_id, updated_loop), new_visited}
+              else
+                {acc, visited_set}
+              end
             end
           end)
+          |> elem(0)
         else
           loops
         end

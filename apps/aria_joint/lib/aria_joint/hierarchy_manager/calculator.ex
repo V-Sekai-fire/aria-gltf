@@ -10,7 +10,7 @@ defmodule AriaJoint.HierarchyManager.Calculator do
   """
 
   alias AriaJoint.{Joint, Registry}
-  alias AriaMath.Matrix4
+  alias AriaMath.{Matrix4, Matrix4.Core, Matrix4.Transformations}
 
   @doc """
   Calculate global transform using functional approach.
@@ -52,11 +52,11 @@ defmodule AriaJoint.HierarchyManager.Calculator do
 
           parent_global ->
             # Use cached parent global transform
-            result = Matrix4.multiply(parent_global, joint.local_transform)
+            result = Core.multiply(parent_global, joint.local_transform)
 
             # Apply orthogonalization if scale is disabled
             if joint.disable_scale do
-              Matrix4.orthogonalize_matrix(result)
+              Transformations.orthogonalize(result)
             else
               result
             end
@@ -101,11 +101,11 @@ defmodule AriaJoint.HierarchyManager.Calculator do
 
           parent_global ->
             # Use cached parent global transform
-            result = Matrix4.multiply(parent_global, joint.local_transform)
+            result = Core.multiply(parent_global, joint.local_transform)
 
             # Apply orthogonalization if scale is disabled
             if joint.disable_scale do
-              Matrix4.orthogonalize_matrix(result)
+              Transformations.orthogonalize(result)
             else
               result
             end
