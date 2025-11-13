@@ -23,8 +23,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Elixir
-        uses: erlef/setup-elixir@v1
+      - name: Set up Erlang/OTP
+        uses: erlef/setup-beam@v1
         with:
           elixir-version: ${{ matrix.elixir }}
           otp-version: ${{ matrix.otp }}
@@ -38,9 +38,9 @@ jobs:
         run: mix compile --warnings-as-errors
 
       - name: Run tests
-        run: mix test
         env:
           MIX_ENV: test
+        run: mix test --no-start
 
       - name: Run formatter check
         run: mix format --check-formatted
@@ -51,8 +51,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Elixir
-        uses: erlef/setup-elixir@v1
+      - name: Set up Erlang/OTP
+        uses: erlef/setup-beam@v1
         with:
           elixir-version: '1.18'
           otp-version: '26'
@@ -63,13 +63,11 @@ jobs:
           mix deps.compile
 
       - name: Run Credo
-        run: |
-          mix credo --strict || true
+        run: mix credo --strict || true
         continue-on-error: true
 
       - name: Run Dialyzer
-        run: |
-          mix dialyzer || true
+        run: mix dialyzer || true
         continue-on-error: true
 
   compile-check:
@@ -78,8 +76,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Elixir
-        uses: erlef/setup-elixir@v1
+      - name: Set up Erlang/OTP
+        uses: erlef/setup-beam@v1
         with:
           elixir-version: '1.18'
           otp-version: '26'
