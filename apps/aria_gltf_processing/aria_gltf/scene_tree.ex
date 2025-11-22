@@ -7,6 +7,22 @@ defmodule AriaGltf.SceneTree do
   
   Provides functions for building aria-gltf scene tree structures from various
   input formats (joint hierarchies, bone lists, etc.).
+  
+  This module works with simple map-based data structures and builds glTF-style
+  scene trees. For more advanced transform hierarchy management with dirty state
+  tracking and efficient updates, see `AriaJoint.HierarchyManager` and related
+  modules in the `aria_joint` app.
+  
+  ## Integration with aria-joint
+  
+  To use this module with `AriaJoint.Joint` structures:
+  1. Extract transform data from Joint nodes using `AriaJoint.Transform.get_local/1`
+  2. Convert Joint structures to simple maps with `:name`, `:parent`, `:position`, `:rotation`, `:scale`
+  3. Use `build_from_bones/2` with the converted data
+  
+  For building hierarchies from Joint nodes directly, consider using
+  `AriaJoint.HierarchyManager.Builder.rebuild_from_nodes/1` which provides
+  nested set optimization and efficient hierarchy management.
   """
 
   @doc """

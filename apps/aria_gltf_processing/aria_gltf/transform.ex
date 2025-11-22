@@ -8,17 +8,18 @@ defmodule AriaGltf.Transform do
   Provides functions for converting between different rotation representations:
   - Tait-Bryan (Euler) angles
   - 3x3 rotation matrices
-  - Quaternions (future)
+  
+  This module integrates with `AriaMath.Matrix4.Euler` for Euler angle operations
+  and `AriaMath.Matrix4.Transformations` for matrix operations.
   """
+
+  alias AriaMath.{Matrix4.Euler, Matrix4.Core, Matrix4.Transformations}
 
   @doc """
   Convert Tait-Bryan (Euler) angles to 3x3 rotation matrix.
   
-  Uses ZYX convention: R = Rz(γ) * Ry(β) * Rx(α)
-  Where:
-  - α (alpha) = X rotation (pitch)
-  - β (beta) = Y rotation (yaw)
-  - γ (gamma) = Z rotation (roll)
+  Uses ZYX convention (Tait-Bryan order) via `AriaMath.Matrix4.Euler`.
+  This is the standard convention used by many 3D engines.
   
   ## Parameters
   
@@ -46,43 +47,22 @@ defmodule AriaGltf.Transform do
   @spec euler_to_3x3_matrix(float(), float(), float()) ::
           [[float(), float(), float()], [float(), float(), float()], [float(), float(), float()]]
   def euler_to_3x3_matrix(x_deg, y_deg, z_deg) do
-    # Convert Tait-Bryan angles (in degrees) to 3x3 rotation matrix
-    # Uses ZYX order (yaw-pitch-roll): R = Rz(γ) * Ry(β) * Rx(α)
-    # Where: x = pitch (α), y = yaw (β), z = roll (γ)
-    # This is the standard Tait-Bryan ZYX convention
+    # Convert degrees to radians
+    x_rad = x_deg * :math.pi() / 180.0
+    y_rad = y_deg * :math.pi() / 180.0
+    z_rad = z_deg * :math.pi() / 180.0
 
-    alpha = x_deg * :math.pi() / 180.0  # Pitch (X rotation)
-    beta = y_deg * :math.pi() / 180.0   # Yaw (Y rotation)
-    gamma = z_deg * :math.pi() / 180.0  # Roll (Z rotation)
+    # Use AriaMath.Matrix4.Euler to create 4x4 rotation matrix with ZYX order
+    matrix4_tuple = Euler.from_euler(x_rad, y_rad, z_rad, :zyx)
 
-    ca = :math.cos(alpha)
-    sa = :math.sin(alpha)
-    cb = :math.cos(beta)
-    sb = :math.sin(beta)
-    cg = :math.cos(gamma)
-    sg = :math.sin(gamma)
+    # Convert tuple to Nx tensor
+    matrix4_tensor = Core.from_tuple(matrix4_tuple)
 
-    # Tait-Bryan ZYX rotation matrix: R = Rz(γ) * Ry(β) * Rx(α)
-    # First row
-    r11 = cb * cg
-    r12 = -cb * sg
-    r13 = sb
+    # Extract 3x3 basis matrix (upper-left corner)
+    basis_3x3 = Transformations.extract_basis(matrix4_tensor)
 
-    # Second row
-    r21 = sa * sb * cg + ca * sg
-    r22 = -sa * sb * sg + ca * cg
-    r23 = -sa * cb
-
-    # Third row
-    r31 = -ca * sb * cg + sa * sg
-    r32 = ca * sb * sg + sa * cg
-    r33 = ca * cb
-
-    [
-      [r11, r12, r13],
-      [r21, r22, r23],
-      [r31, r32, r33]
-    ]
+    # Convert Nx tensor to list of lists
+    Nx.to_list(basis_3x3)
   end
 
   @doc """
@@ -90,6 +70,9 @@ defmodule AriaGltf.Transform do
   
   Inverse of `euler_to_3x3_matrix/3`.
   Returns angles in degrees using ZYX convention.
+  
+  This implements the inverse of the ZYX rotation order:
+  R = Rz(γ) * Ry(β) * Rx(α)
   
   ## Parameters
   
@@ -114,22 +97,29 @@ defmodule AriaGltf.Transform do
       ]) do
     # Extract Tait-Bryan angles from 3x3 rotation matrix
     # Using ZYX convention: R = Rz(γ) * Ry(β) * Rx(α)
+    # Where: α = pitch (X), β = yaw (Y), γ = roll (Z)
 
     # Calculate yaw (β) from r13
+    # r13 = sin(β) in ZYX order
     beta = :math.asin(:math.max(-1.0, :math.min(1.0, r13)))
 
-    # Handle gimbal lock cases
+    # Handle gimbal lock cases (when |sin(β)| ≈ 1, i.e., β ≈ ±90°)
     if abs(r13) >= 0.9999 do
       # Gimbal lock: beta ≈ ±90°
+      # In this case, we can only determine α + γ, so we set α = 0
       alpha = 0.0
       gamma = :math.atan2(-r12, r11)
       {alpha * 180.0 / :math.pi(), beta * 180.0 / :math.pi(), gamma * 180.0 / :math.pi()}
     else
-      # Normal case
+      # Normal case: extract all three angles
+      # From ZYX rotation matrix:
+      # r23 = -sin(α) * cos(β)
+      # r33 = cos(α) * cos(β)
+      # r12 = -cos(β) * sin(γ)
+      # r11 = cos(β) * cos(γ)
       alpha = :math.atan2(-r23, r33)
       gamma = :math.atan2(-r12, r11)
       {alpha * 180.0 / :math.pi(), beta * 180.0 / :math.pi(), gamma * 180.0 / :math.pi()}
     end
   end
 end
-
