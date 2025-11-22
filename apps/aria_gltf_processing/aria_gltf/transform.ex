@@ -45,7 +45,7 @@ defmodule AriaGltf.Transform do
       [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
       
       iex> matrix = AriaGltf.Transform.euler_to_3x3_matrix(90, 0, 0)
-      [[1.0, 0.0, 0.0], [0.0, 0.0, -1.0], [0.0, 1.0, 0.0]]
+      [[1.0, 0.0, 0.0], [0.0, 0.0, 1.0], [0.0, -1.0, 0.0]]
   """
   @spec euler_to_3x3_matrix(float(), float(), float()) :: matrix_3x3()
   def euler_to_3x3_matrix(x_deg, y_deg, z_deg) do
