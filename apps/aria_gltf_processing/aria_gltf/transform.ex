@@ -16,6 +16,8 @@ defmodule AriaGltf.Transform do
   alias Nx
   alias AriaMath.{Matrix4.Euler, Matrix4.Core, Matrix4.Transformations}
 
+  @type matrix_3x3() :: [list(float())]
+
   @doc """
   Convert Tait-Bryan (Euler) angles to 3x3 rotation matrix.
   
@@ -45,8 +47,7 @@ defmodule AriaGltf.Transform do
       iex> matrix = AriaGltf.Transform.euler_to_3x3_matrix(90, 0, 0)
       [[1.0, 0.0, 0.0], [0.0, 0.0, -1.0], [0.0, 1.0, 0.0]]
   """
-  @spec euler_to_3x3_matrix(float(), float(), float()) ::
-          [[float(), float(), float()], [float(), float(), float()], [float(), float(), float()]]
+  @spec euler_to_3x3_matrix(float(), float(), float()) :: matrix_3x3()
   def euler_to_3x3_matrix(x_deg, y_deg, z_deg) do
     # Convert degrees to radians
     x_rad = x_deg * :math.pi() / 180.0

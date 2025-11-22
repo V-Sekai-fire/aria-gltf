@@ -152,7 +152,7 @@ defmodule AriaGltf.SceneTree do
 
     # Update children array with child indices
     child_start_index = current_index + 1
-    child_count = next_index - child_start_index
+    _child_count = next_index - child_start_index
     children_indices = Enum.to_list(child_start_index..(next_index - 1))
 
     # Update node with children
