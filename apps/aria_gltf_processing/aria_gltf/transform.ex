@@ -13,6 +13,7 @@ defmodule AriaGltf.Transform do
   and `AriaMath.Matrix4.Transformations` for matrix operations.
   """
 
+  alias Nx
   alias AriaMath.{Matrix4.Euler, Matrix4.Core, Matrix4.Transformations}
 
   @doc """
