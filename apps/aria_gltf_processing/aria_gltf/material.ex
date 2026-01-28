@@ -279,14 +279,14 @@ defmodule AriaGltf.Material do
 
   # Helper functions
 
-  defp put_if_present(map, key, value), do: Map.put(map, key, value)
   defp put_if_present(map, _key, nil), do: map
+  defp put_if_present(map, key, value), do: Map.put(map, key, value)
 
   defp put_if_present(map, key, value, transform_fn) when is_function(transform_fn, 1),
     do: Map.put(map, key, transform_fn.(value))
 
-  defp put_if_present(map, key, value, _default), do: Map.put(map, key, value)
   defp put_if_present(map, _key, value, default) when value == default, do: map
+  defp put_if_present(map, key, value, _default), do: Map.put(map, key, value)
 
   defp alpha_mode_to_string(:opaque), do: "OPAQUE"
   defp alpha_mode_to_string(:mask), do: "MASK"

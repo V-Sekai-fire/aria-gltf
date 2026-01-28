@@ -436,8 +436,8 @@ defmodule AriaGltf.Accessor do
 
   defp put_if_present(map, _key, nil), do: map
   defp put_if_present(map, key, value), do: Map.put(map, key, value)
-  defp put_if_present(map, key, value, _default), do: Map.put(map, key, value)
   defp put_if_present(map, _key, value, default) when value == default, do: map
+  defp put_if_present(map, key, value, _default), do: Map.put(map, key, value)
 
   defp get_required_field(map, key) do
     case Map.get(map, key) do

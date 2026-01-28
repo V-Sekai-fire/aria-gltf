@@ -73,8 +73,11 @@ defmodule AriaGltf.Sampler do
   end
 
   # Helper functions
-  defp put_if_present(map, key, value), do: Map.put(map, key, value)
+  # put_if_present/3 clauses
   defp put_if_present(map, _key, nil), do: map
+  defp put_if_present(map, key, value), do: Map.put(map, key, value)
+
+  # put_if_present/4 clauses
   defp put_if_present(map, _key, value, default) when value == default, do: map
   defp put_if_present(map, key, value, _default), do: Map.put(map, key, value)
 end
