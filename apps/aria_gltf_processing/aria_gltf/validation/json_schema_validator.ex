@@ -72,9 +72,6 @@ defmodule AriaGltf.Validation.JsonSchemaValidator do
             end)
 
           {:error, error_messages}
-
-        {:error, reason} ->
-          {:error, ["JSON schema validation error: #{inspect(reason)}"]}
       end
     rescue
       e ->
