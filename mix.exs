@@ -29,8 +29,8 @@ defmodule AriaGltfUmbrella.MixProject do
   defp deps do
     [
       {:jason, "~> 1.4"},
-      {:nx, "~> 0.10"},
-      {:torchx, "~> 0.10"},
+      {:nx, "~> 0.11"},
+      {:torchx, "~> 0.11"},
       {:aria_math, git: "https://github.com/V-Sekai-fire/aria-math.git"},
       {:dialyxir, "~> 1.4", only: [:dev], runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false}

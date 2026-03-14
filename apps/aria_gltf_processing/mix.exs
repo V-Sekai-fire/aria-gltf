@@ -43,8 +43,8 @@ defmodule AriaGltfProcessing.MixProject do
   defp deps do
     [
       {:jason, "~> 1.4"},
-      {:nx, "~> 0.10"},
-      {:torchx, "~> 0.10"},
+      {:nx, "~> 0.11"},
+      {:torchx, "~> 0.11"},
       {:aria_math, git: "https://github.com/V-Sekai-fire/aria-math.git"},
       {:aria_joint, in_umbrella: true},
       {:json_xema, "~> 0.6.5"},

@@ -32,8 +32,8 @@ defmodule AriaJoint.MixProject do
   defp deps do
     [
       {:aria_math, git: "https://github.com/V-Sekai-fire/aria-math.git"},
-      {:nx, "~> 0.10.0"},
-      {:torchx, "~> 0.10"}
+      {:nx, "~> 0.11"},
+      {:torchx, "~> 0.11"}
     ]
   end
 end
